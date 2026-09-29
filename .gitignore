@@ -8,12 +8,16 @@ coverage/
 
 *.log
 .DS_Store
-.env*
 
+.env*
 *.p8
 *.p12
 *.key
-*.pem
 *.mobileprovision
 *.jks
-*.keystore
+*.pem
+
+.expo-shared/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

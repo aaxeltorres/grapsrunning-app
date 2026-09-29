@@ -4,9 +4,8 @@
 
 - Use Conventional Commits: `type(scope): short imperative summary`.
 - Keep the summary to about 72 characters or fewer.
-- Use only these types: `feat`, `fix`, `refactor`, `style`, `docs`, `chore`,
-  `perf`, and `test`.
-- Write commit messages in English and use the imperative mood.
+- Use only `feat`, `fix`, `refactor`, `style`, `docs`, `chore`, `perf`, or `test`.
+- Write in English and use the imperative mood.
 - Wrap the body at about 72 characters. Explain what changed and why, and
   mention affected screens or components where relevant.
 - Add a `BREAKING CHANGE:` footer when a change is breaking.
