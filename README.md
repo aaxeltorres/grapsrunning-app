@@ -1,36 +1,31 @@
 # Graps Running App
 
-Graps Running App is an iOS beta prototype of the Graps Running mobile app,
-built with React Native, Expo, and TypeScript. It is a companion to the Graps
-Running web project in the `grapsrunning` and `grapsrunning-backend` repos.
+An iOS beta prototype of the Graps Running mobile app, built with React Native,
+Expo, and TypeScript. It is the mobile companion to the Graps Running web
+project in the `grapsrunning` and `grapsrunning-backend` repositories.
 
 ## Features
 
-- Fake sign-in and onboarding flow
-- Home dashboard and stats
+- Fake authentication and sign-in flow
+- Home dashboard and activity statistics
 - GPS run tracking with background location support
 - Run results with a route map
 
-Background location requires a development build and does not work in Expo Go.
+## Run the app
 
-## Getting Started
-
-```sh
+```bash
 npm install
 npx expo start
-```
-
-To connect over a tunnel, run:
-
-```sh
 npx expo start --tunnel
 ```
 
-## Project Structure
+Background location requires a development build and does not work in Expo Go.
 
-- `src/theme`: colors, typography, spacing, and radius tokens
+## Project structure
+
+- `src/theme`: design tokens for colors, typography, and spacing
 - `src/components`: reusable UI components
 - `src/screens`: app screens
-- `src/navigation`: navigation setup and route types
-- `src/utils`: formatting, location, and mock data helpers
-- `src/hooks`: reusable React hooks, including run tracking
+- `src/navigation`: navigation and route types
+- `src/utils`: formatting, location, and mock-data helpers
+- `src/hooks`: shared React hooks, including run tracking
