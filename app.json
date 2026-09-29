@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Graps Running",
+    "slug": "graps-running",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.grapsrunning.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location"
+        ],
+        "NSLocationWhenInUseUsageDescription": "Graps Running needs access to your location to track your run.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Graps Running needs access to your location to keep tracking your run even when the app is in the background."
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Graps Running to use your location for run tracking.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
+    ]
+  }
+}
