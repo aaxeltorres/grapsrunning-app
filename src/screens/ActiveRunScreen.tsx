@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, SafeAreaView, Animated, Easing, Text, Linking } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
@@ -11,6 +12,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 export default function ActiveRunScreen({ navigation }: Props) {
   // Theme animation
   const themeAnim = useRef(new Animated.Value(0)).current;
+  const [statusBarStyle, setStatusBarStyle] = React.useState<'dark' | 'light'>('dark');
   
   const {
     runState,
@@ -26,6 +28,16 @@ export default function ActiveRunScreen({ navigation }: Props) {
     finishRun,
     requestPermissions,
   } = useRunTracking();
+
+  useEffect(() => {
+    const listenerId = themeAnim.addListener(({ value }) => {
+      const nextStyle = value >= 0.5 ? 'light' : 'dark';
+      setStatusBarStyle((currentStyle) =>
+        currentStyle === nextStyle ? currentStyle : nextStyle,
+      );
+    });
+    return () => themeAnim.removeListener(listenerId);
+  }, [themeAnim]);
 
   // Initial enter animation logic when permissions are granted and idle
   useEffect(() => {
@@ -141,6 +153,7 @@ export default function ActiveRunScreen({ navigation }: Props) {
 
   return (
     <Animated.View style={[styles.container, { backgroundColor }]}>
+      <StatusBar style={statusBarStyle} />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
           <Animated.Text style={[typography.headline, { color: textColor }]}>

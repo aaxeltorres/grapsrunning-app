@@ -8,6 +8,10 @@ const MIN_PACE_WINDOW_DURATION_MS = 10_000;
 const MIN_PACE_WINDOW_POINTS = 3;
 const MIN_PACE_SECONDS_PER_KM = 2 * 60;
 const MAX_PACE_SECONDS_PER_KM = 20 * 60;
+const MAX_HORIZONTAL_ACCURACY_METERS = 20;
+const MIN_MOVEMENT_METERS = 3;
+const GPS_STABILIZATION_DURATION_MS = 5_000;
+const GPS_STABILIZATION_POINT_COUNT = 3;
 
 function toRad(value: number) {
   return (value * Math.PI) / 180;
@@ -34,6 +38,38 @@ export function calculateDistanceKm(
   return EARTH_RADIUS_KM * c;
 }
 
+export function createLocationAccuracyGate(): (location: Location.LocationObject) => boolean {
+  let firstAccurateTimestamp: number | null = null;
+  let lastAccurateTimestamp: number | null = null;
+  let accuratePointCount = 0;
+  let isStabilized = false;
+
+  return (location) => {
+    const accuracy = location.coords.accuracy;
+    if (accuracy === null || !Number.isFinite(accuracy) || accuracy > MAX_HORIZONTAL_ACCURACY_METERS) {
+      if (!isStabilized) {
+        firstAccurateTimestamp = null;
+        lastAccurateTimestamp = null;
+        accuratePointCount = 0;
+      }
+      return false;
+    }
+
+    if (isStabilized) return true;
+    if (lastAccurateTimestamp !== null && location.timestamp <= lastAccurateTimestamp) {
+      return false;
+    }
+
+    firstAccurateTimestamp ??= location.timestamp;
+    lastAccurateTimestamp = location.timestamp;
+    accuratePointCount += 1;
+    isStabilized =
+      accuratePointCount >= GPS_STABILIZATION_POINT_COUNT &&
+      location.timestamp - firstAccurateTimestamp >= GPS_STABILIZATION_DURATION_MS;
+    return isStabilized;
+  };
+}
+
 /**
  * Filter points based on accuracy and implicit speed to avoid GPS jumps
  */
@@ -41,8 +77,10 @@ export function isValidLocation(
   current: Location.LocationObject,
   previous: Location.LocationObject | null
 ): boolean {
-  // Discard points with bad accuracy (e.g. > 25 meters)
-  if (current.coords.accuracy && current.coords.accuracy > 25) {
+  // Expo's accuracy value is horizontal accuracy in meters. Keep the former
+  // 25 m ceiling and use a stricter cap to avoid accumulating GPS drift.
+  const accuracy = current.coords.accuracy;
+  if (accuracy === null || accuracy > 25 || accuracy > MAX_HORIZONTAL_ACCURACY_METERS) {
     return false;
   }
 
@@ -54,6 +92,10 @@ export function isValidLocation(
     current.coords.latitude,
     current.coords.longitude
   );
+
+  if (distanceKm * 1000 <= Math.max(accuracy, MIN_MOVEMENT_METERS)) {
+    return false;
+  }
 
   const timeDiffSeconds = (current.timestamp - previous.timestamp) / 1000;
   

@@ -7,11 +7,16 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import {
   calculateDistanceKm,
   calculateRollingPaceSeconds,
+  createLocationAccuracyGate,
   isValidLocation,
   smoothPaceSeconds,
 } from '../utils/location';
-import { formatPaceSeconds } from '../utils/format';
-import { LOCATION_TASK_NAME, ACTIVE_RUN_DATA_KEY } from '../tasks/locationTask';
+import { formatPaceSeconds, hasEnoughPaceData, PACE_PLACEHOLDER } from '../utils/format';
+import {
+  LOCATION_TASK_NAME,
+  ACTIVE_RUN_DATA_KEY,
+  resetBackgroundLocationAccuracyGate,
+} from '../tasks/locationTask';
 
 export type RunState = 'idle' | 'running' | 'paused' | 'finished';
 
@@ -65,6 +70,7 @@ export function useRunTracking(): UseRunTrackingResult {
 
   // Expo Go foreground fallback
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const locationAccuracyGateRef = useRef(createLocationAccuracyGate());
   const isPausedRef = useRef(false);
   const durationSecondsRef = useRef(0);
   const smoothedPaceRef = useRef<number | null>(null);
@@ -182,11 +188,24 @@ export function useRunTracking(): UseRunTrackingResult {
     }
   };
 
+  const updateMovingDuration = (timestamp: number) => {
+    if (startTime === null) return durationSecondsRef.current;
+    const movingDuration = Math.max(
+      0,
+      Math.floor((timestamp - startTime - totalPausedTimeMs) / 1000),
+    );
+    durationSecondsRef.current = movingDuration;
+    setDurationSeconds(movingDuration);
+    return movingDuration;
+  };
+
   const startRun = async () => {
     if (permissionState !== 'granted') return;
     
     await cleanup();
     isPausedRef.current = false;
+    locationAccuracyGateRef.current = createLocationAccuracyGate();
+    resetBackgroundLocationAccuracyGate();
     durationSecondsRef.current = 0;
     smoothedPaceRef.current = null;
     lastPacePointTimestampRef.current = null;
@@ -201,9 +220,14 @@ export function useRunTracking(): UseRunTrackingResult {
 
   const pauseRun = async () => {
     if (runState !== 'running') return;
+    const pausedAt = Date.now();
+    const movingDuration = updateMovingDuration(pausedAt);
+    const averagePace = distanceKm > 0 ? movingDuration / distanceKm : null;
+    smoothedPaceRef.current = averagePace;
+    setDisplayedPaceSeconds(averagePace);
     isPausedRef.current = true;
     setRunState('paused');
-    setPauseStartTime(Date.now());
+    setPauseStartTime(pausedAt);
     await stopLocationUpdates();
     
     // Inject pause marker
@@ -290,6 +314,7 @@ export function useRunTracking(): UseRunTrackingResult {
       },
       async (loc) => {
         try {
+          if (!locationAccuracyGateRef.current(loc)) return;
           const stored = await AsyncStorage.getItem(ACTIVE_RUN_DATA_KEY);
           const locations: Location.LocationObject[] = stored ? JSON.parse(stored) : [];
           const prev = locations.length > 0 ? locations[locations.length - 1] : null;
@@ -328,7 +353,9 @@ export function useRunTracking(): UseRunTrackingResult {
     await AsyncStorage.removeItem(ACTIVE_RUN_DATA_KEY);
   };
 
-  const paceLabel = formatPaceSeconds(displayedPaceSeconds);
+  const paceLabel = hasEnoughPaceData(durationSeconds, distanceKm)
+    ? formatPaceSeconds(displayedPaceSeconds)
+    : PACE_PLACEHOLDER;
   const calories = Math.floor(distanceKm * 65);
 
   return {
