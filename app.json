@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Graps Running",
-    "slug": "graps-running",
+    "slug": "grapsrunning-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.grapsrunning.app",
       "infoPlist": {
         "UIBackgroundModes": [
+          "location",
+          "location",
+          "location",
           "location"
         ],
         "NSLocationWhenInUseUsageDescription": "Graps Running needs access to your location to track your run.",
@@ -34,6 +37,26 @@
           "backgroundColor": "#FFFFFF"
         }
       ]
-    ]
+    ],
+    "owner": "graps-running",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "android": {
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3330eb25-9140-4b04-bac6-8e3b570b96e7"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3330eb25-9140-4b04-bac6-8e3b570b96e7"
+    }
   }
 }
