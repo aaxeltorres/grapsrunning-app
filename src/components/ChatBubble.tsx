@@ -34,7 +34,7 @@ export function bubbleCorners(
  * A single chat message. Mike's bubbles sit on the left in gray; the
  * user's sit on the right in blue.
  */
-export default function ChatBubble({
+function ChatBubble({
   text,
   sender,
   isFirstInGroup = true,
@@ -98,3 +98,5 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 });
+
+export default React.memo(ChatBubble);

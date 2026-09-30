@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import { colors, motion, radius, spacing, typography } from '../theme';
 import { bubbleCorners } from './ChatBubble';
@@ -10,6 +10,7 @@ const DOT_RISE = 3;
 const DOT_STAGGER_MS = 160;
 const DOT_STEP_MS = 300;
 const DOT_REST_MS = 200;
+const BODY_LINE_HEIGHT = typography.body.lineHeight ?? 0;
 
 type Props = {
   /** First item of Mike's group: rounds the top corner next to the avatar. */
@@ -21,7 +22,7 @@ type Props = {
  * "Mike is typing" bubble with three animated dots, shaped like one of
  * Mike's chat bubbles.
  */
-export default function TypingIndicator({
+function TypingIndicator({
   isFirstInGroup = true,
   reduceMotion = false,
 }: Props) {
@@ -30,6 +31,10 @@ export default function TypingIndicator({
     reduceMotion,
     fromScale: 0.85,
   });
+  // Same height as a one-line ChatBubble (text grows with Dynamic Type),
+  // so the swap doesn't jump.
+  const { fontScale } = useWindowDimensions();
+  const minHeight = BODY_LINE_HEIGHT * Math.max(1, fontScale) + spacing.xs * 2;
   const dots = useRef(
     Array.from({ length: DOT_COUNT }, () => new Animated.Value(0)),
   ).current;
@@ -70,6 +75,7 @@ export default function TypingIndicator({
       style={[
         styles.bubble,
         bubbleCorners('mike', isFirstInGroup, true),
+        { minHeight },
         entrance,
       ]}
     >
@@ -108,8 +114,6 @@ const styles = StyleSheet.create({
   bubble: {
     alignSelf: 'flex-start',
     justifyContent: 'center',
-    // Same height as a one-line ChatBubble, so the swap doesn't jump.
-    minHeight: (typography.body.lineHeight ?? 0) + spacing.xs * 2,
     paddingHorizontal: spacing.md,
     borderRadius: radius.lg,
     backgroundColor: colors.chatBubbleIncoming,
@@ -127,3 +131,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chatTypingDot,
   },
 });
+
+export default React.memo(TypingIndicator);

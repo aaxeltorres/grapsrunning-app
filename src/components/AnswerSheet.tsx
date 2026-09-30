@@ -1,5 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { normalizeSelection } from '../coach/conversation';
 import type {
   AnswerValue,
@@ -19,6 +26,10 @@ import WheelPicker from './WheelPicker';
 const TILE_GAP = spacing.sm;
 const DAY_COLUMNS = 4;
 const MULTISELECT_COLUMNS = 2;
+// Room kept for the grabber, header, Done button and a gap above the sheet.
+// The text-sized part grows with Dynamic Type.
+const SHEET_CHROME_FIXED = 120;
+const SHEET_CHROME_TEXT = 140;
 
 type Props = {
   /** Question being answered; kept while the sheet animates out. */
@@ -95,6 +106,16 @@ function SheetContent({
     initialDraft(question, initialValue),
   );
   const submittedRef = useRef(false);
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight, fontScale } = useWindowDimensions();
+  // Long inputs scroll on small screens (iPhone SE) or with large text,
+  // so the title and Done button always stay on screen.
+  const inputMaxHeight =
+    windowHeight -
+    insets.top -
+    insets.bottom -
+    SHEET_CHROME_FIXED -
+    SHEET_CHROME_TEXT * Math.max(1, fontScale);
 
   const canSubmit =
     draft !== undefined && (!Array.isArray(draft) || draft.length > 0);
@@ -130,7 +151,11 @@ function SheetContent({
         )}
       </View>
 
-      <View style={styles.input}>
+      <ScrollView
+        style={[styles.input, { maxHeight: inputMaxHeight }]}
+        alwaysBounceVertical={false}
+        showsVerticalScrollIndicator={false}
+      >
         {question.type === 'choice' && (
           <ChoiceInput
             question={question}
@@ -152,7 +177,7 @@ function SheetContent({
             onChange={setDraft}
           />
         )}
-      </View>
+      </ScrollView>
 
       <Button label="Done" onPress={handleDone} disabled={!canSubmit} />
     </View>
@@ -299,6 +324,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   input: {
+    flexGrow: 0,
     marginBottom: spacing.lg,
   },
   list: {

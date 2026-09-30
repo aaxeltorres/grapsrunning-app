@@ -24,7 +24,7 @@ type Props = {
  * in with a small pop. Tapping it opens the answer sheet (to answer or
  * edit).
  */
-export default function AnswerBubble({
+function AnswerBubble({
   text,
   questionLabel,
   onPress,
@@ -153,3 +153,5 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 });
+
+export default React.memo(AnswerBubble);

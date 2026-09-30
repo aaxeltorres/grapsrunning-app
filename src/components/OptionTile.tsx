@@ -4,6 +4,8 @@ import { colors, motion, radius, spacing, typography } from '../theme';
 
 const PRESSED_SCALE = 0.96;
 const BADGE_SIZE = 22;
+// Day tiles are narrow (4 per row): cap Dynamic Type so labels still fit.
+const SQUARE_MAX_FONT_SCALE = 1.4;
 
 type Props = {
   label: string;
@@ -58,7 +60,8 @@ export default function OptionTile({
         ]}
       >
         <Text
-          numberOfLines={2}
+          numberOfLines={isSquare ? 1 : undefined}
+          maxFontSizeMultiplier={isSquare ? SQUARE_MAX_FONT_SCALE : undefined}
           style={[
             typography.headline,
             styles.label,
@@ -90,7 +93,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceGray,
   },
   square: {
-    height: 72,
+    minHeight: 72,
     alignItems: 'center',
     justifyContent: 'center',
   },
