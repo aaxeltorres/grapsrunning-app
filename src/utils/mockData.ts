@@ -2,6 +2,8 @@
  * Mock data — stands in for backend/API responses in this beta prototype.
  */
 
+import Constants from 'expo-constants';
+
 export type DailyStats = {
   dateLabel: string; // e.g. "Today"
   fullDateLabel: string; // e.g. "Friday, February 6th"
@@ -67,4 +69,5 @@ export const mockHomeFeatures: FeatureCardData[] = [
   },
 ];
 
-export const APP_VERSION = '1.0.0';
+/** Mirrors `expo.version` in app.json, the single source of truth. */
+export const APP_VERSION = Constants.expoConfig?.version ?? 'unknown';
