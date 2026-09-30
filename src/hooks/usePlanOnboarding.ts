@@ -1,26 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createEmptyProfile, type RunnerProfile } from '../coach/runnerProfile';
+import { profileStorage } from '../storage/profileStorage';
 
 const PLAN_ONBOARDING_DONE_KEY = 'plan_onboarding_done';
 
 export type PlanOnboardingStatus = 'loading' | 'pending' | 'done';
 
 /**
- * Persists whether the user has already seen Mike's Plan onboarding.
+ * Loads whether the user has finished Mike's Plan onboarding, plus the
+ * answers saved so far (to resume a half-finished conversation).
  */
 export function usePlanOnboarding() {
   const [status, setStatus] = useState<PlanOnboardingStatus>('loading');
+  const [profile, setProfile] = useState<RunnerProfile>(createEmptyProfile);
 
   useEffect(() => {
     let active = true;
 
-    AsyncStorage.getItem(PLAN_ONBOARDING_DONE_KEY)
-      .then((value) => {
-        if (active) setStatus(value === 'true' ? 'done' : 'pending');
-      })
-      .catch(() => {
-        if (active) setStatus('pending');
-      });
+    Promise.all([
+      AsyncStorage.getItem(PLAN_ONBOARDING_DONE_KEY).catch(() => null),
+      profileStorage.get().catch(() => createEmptyProfile()),
+    ]).then(([flag, storedProfile]) => {
+      if (!active) return;
+      setProfile(storedProfile);
+      setStatus(flag === 'true' ? 'done' : 'pending');
+    });
 
     return () => {
       active = false;
@@ -39,15 +44,19 @@ export function usePlanOnboarding() {
     }
   }, []);
 
-  /** Dev helper: clears the flag so the onboarding plays again. */
+  /** Dev helper: clears the flag and the answers so the onboarding starts over. */
   const reset = useCallback(async () => {
     try {
-      await AsyncStorage.removeItem(PLAN_ONBOARDING_DONE_KEY);
+      await Promise.all([
+        AsyncStorage.removeItem(PLAN_ONBOARDING_DONE_KEY),
+        profileStorage.clear(),
+      ]);
     } catch (error) {
-      console.warn('Failed to reset Plan onboarding flag', error);
+      console.warn('Failed to reset Plan onboarding', error);
     }
+    setProfile(createEmptyProfile());
     setStatus('pending');
   }, []);
 
-  return { status, markDone, reset };
+  return { status, profile, markDone, reset };
 }

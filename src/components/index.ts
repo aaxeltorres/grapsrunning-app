@@ -11,3 +11,8 @@ export { default as MikeAvatar } from './MikeAvatar';
 export { default as ChatBubble } from './ChatBubble';
 export { default as TypingIndicator } from './TypingIndicator';
 export { default as OnboardingChat } from './OnboardingChat';
+export { default as AnswerBubble } from './AnswerBubble';
+export { default as AnswerSheet } from './AnswerSheet';
+export { default as BottomSheet } from './BottomSheet';
+export { default as OptionTile } from './OptionTile';
+export { default as WheelPicker } from './WheelPicker';

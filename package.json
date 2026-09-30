@@ -12,6 +12,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-picker/picker": "2.11.4",
     "@react-navigation/native": "^6.1.17",
     "@react-navigation/native-stack": "^6.9.26",
     "babel-preset-expo": "~57.0.0",

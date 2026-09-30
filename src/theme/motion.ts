@@ -9,4 +9,8 @@ export const motion = {
   easeStandard: Easing.bezier(0.4, 0.0, 0.2, 1),
   /** Quick, slightly bouncy spring for elements that pop into place. */
   springPop: { damping: 20, stiffness: 280, mass: 1 },
+  /** Bouncier pop, e.g. an answer bubble filling in. */
+  springBounce: { damping: 12, stiffness: 320, mass: 0.8 },
+  /** Bottom sheet slide-up: fast, with almost no overshoot. */
+  springSheet: { damping: 30, stiffness: 300, mass: 1 },
 } as const;

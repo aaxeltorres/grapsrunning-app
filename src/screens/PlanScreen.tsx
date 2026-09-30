@@ -14,11 +14,11 @@ import { successNotification } from '../utils/haptics';
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
 /**
- * Training plan section. On the first visit Mike runs a chat onboarding;
- * afterwards the plan itself will live here.
+ * Training plan section. On the first visit Mike runs a chat onboarding
+ * (resumed where the user left off); afterwards the plan will live here.
  */
 export default function PlanScreen({}: Props) {
-  const { status, markDone, reset } = usePlanOnboarding();
+  const { status, profile, markDone, reset } = usePlanOnboarding();
   // Bumped on dev reset to remount the chat and replay it from the start.
   const [chatRun, setChatRun] = useState(0);
 
@@ -41,6 +41,7 @@ export default function PlanScreen({}: Props) {
         <OnboardingChat
           key={chatRun}
           script={planOnboardingScript}
+          initialProfile={profile}
           onComplete={markDone}
         />
       )}
