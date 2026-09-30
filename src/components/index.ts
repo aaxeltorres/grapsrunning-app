@@ -7,3 +7,7 @@ export { default as ProgressBar } from './ProgressBar';
 export { default as TopBar } from './TopBar';
 export { default as IconPlaceholder } from './IconPlaceholder';
 export { default as RunMap } from './RunMap';
+export { default as MikeAvatar } from './MikeAvatar';
+export { default as ChatBubble } from './ChatBubble';
+export { default as TypingIndicator } from './TypingIndicator';
+export { default as OnboardingChat } from './OnboardingChat';

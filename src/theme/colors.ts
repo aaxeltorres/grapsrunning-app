@@ -43,6 +43,10 @@ export const colors = {
   runDarkBg: '#0B0B0C',
   runDarkText: '#FFFFFF',
   runDarkTextSecondary: '#9CA3AF',
+
+  // Coach Mike chat
+  chatBubbleIncoming: '#E9E9EB', // iMessage-style gray for Mike's bubbles
+  chatTypingDot: '#8E8E93',
 } as const;
 
 export type ColorToken = keyof typeof colors;
