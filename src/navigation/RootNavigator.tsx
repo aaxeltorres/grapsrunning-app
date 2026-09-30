@@ -10,6 +10,7 @@ import {
   PlaceholderScreen,
   ActiveRunScreen,
   RunResultsScreen,
+  PlanScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -29,10 +30,14 @@ export default function RootNavigator() {
           component={StatsScreen}
           options={{ animation: 'slide_from_right' }}
         />
+        <Stack.Screen
+          name="Plan"
+          component={PlanScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
         {/* Stub destinations so Home cards never dead-end */}
         <Stack.Screen name="CoachMike" component={PlaceholderScreen} />
         <Stack.Screen name="Routes" component={PlaceholderScreen} />
-        <Stack.Screen name="Plan" component={PlaceholderScreen} />
         <Stack.Screen 
           name="ActiveRun" 
           component={ActiveRunScreen} 

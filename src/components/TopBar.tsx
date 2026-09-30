@@ -7,9 +7,15 @@ type Props = {
   /** Left side: pass a title string OR leave undefined to show the logo mark */
   title?: string;
   showLogo?: boolean;
+  /** Long-press on the title, e.g. for dev-only shortcuts. */
+  onTitleLongPress?: () => void;
 };
 
-export default function TopBar({ title, showLogo = false }: Props) {
+export default function TopBar({
+  title,
+  showLogo = false,
+  onTitleLongPress,
+}: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.left}>
@@ -21,7 +27,13 @@ export default function TopBar({ title, showLogo = false }: Props) {
           />
         )}
         {title ? (
-          <Text style={typography.title1}>{title}</Text>
+          <Text
+            style={typography.title1}
+            onLongPress={onTitleLongPress}
+            suppressHighlighting
+          >
+            {title}
+          </Text>
         ) : (
           <Text style={[typography.headline, styles.brand]}>
             Graps Running

@@ -8,12 +8,12 @@ export type RootStackParamList = {
   SignIn: undefined;
   Home: undefined;
   Stats: undefined;
+  Plan: undefined;
   // Placeholder destinations for the other Home feature cards.
   // Not part of the current screen scope — wired up as empty stubs
   // so navigation from Home doesn't dead-end.
   CoachMike: undefined;
   Routes: undefined;
-  Plan: undefined;
   ActiveRun: undefined;
   RunResults: {
     distanceKm: number;

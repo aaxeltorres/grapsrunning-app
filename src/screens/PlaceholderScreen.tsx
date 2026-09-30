@@ -7,12 +7,12 @@ import IconPlaceholder from '../components/IconPlaceholder';
 
 type Props = NativeStackScreenProps<
   RootStackParamList,
-  'CoachMike' | 'Routes' | 'Plan'
+  'CoachMike' | 'Routes'
 >;
 
 /**
  * Stand-in destination for Home cards whose full screens are out of
- * scope for this beta pass (AI Coach Mike chat, Routes, Plan).
+ * scope for this beta pass (AI Coach Mike chat, Routes).
  * Keeps navigation functional end-to-end without dead links.
  */
 export default function PlaceholderScreen({ route }: Props) {
