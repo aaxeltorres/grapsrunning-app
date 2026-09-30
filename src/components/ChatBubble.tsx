@@ -1,11 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { Animated, StyleSheet, Text, ViewStyle } from 'react-native';
 import type { ChatSender } from '../coach/types';
-import { colors, motion, radius, spacing, typography } from '../theme';
-
-const FADE_IN_MS = 180;
-const ENTER_OFFSET_Y = 10;
-const ENTER_SCALE = 0.92;
+import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
+import { colors, radius, spacing, typography } from '../theme';
 
 type Props = {
   text: string;
@@ -46,37 +43,12 @@ export default function ChatBubble({
   reduceMotion = false,
 }: Props) {
   const isMike = sender === 'mike';
-  const opacity = useRef(new Animated.Value(animateOnMount ? 0 : 1)).current;
-  // Reduce Motion keeps the fade but drops the slide and scale.
-  const enter = useRef(
-    new Animated.Value(animateOnMount && !reduceMotion ? 0 : 1),
-  ).current;
-
-  useEffect(() => {
-    if (!animateOnMount) return;
-
-    const fade = Animated.timing(opacity, {
-      toValue: 1,
-      duration: FADE_IN_MS,
-      easing: motion.easeStandard,
-      useNativeDriver: true,
-    });
-    const animation = reduceMotion
-      ? fade
-      : Animated.parallel([
-          fade,
-          Animated.spring(enter, {
-            toValue: 1,
-            ...motion.springPop,
-            useNativeDriver: true,
-          }),
-        ]);
-
-    animation.start();
-    return () => animation.stop();
-    // Arrival animation runs once, on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const entrance = useEntranceAnimation({
+    animate: animateOnMount,
+    reduceMotion,
+    offsetY: 10,
+    fromScale: 0.92,
+  });
 
   return (
     <Animated.View
@@ -86,23 +58,7 @@ export default function ChatBubble({
         styles.bubble,
         isMike ? styles.incoming : styles.outgoing,
         bubbleCorners(sender, isFirstInGroup, isLastInGroup),
-        {
-          opacity,
-          transform: [
-            {
-              translateY: enter.interpolate({
-                inputRange: [0, 1],
-                outputRange: [ENTER_OFFSET_Y, 0],
-              }),
-            },
-            {
-              scale: enter.interpolate({
-                inputRange: [0, 1],
-                outputRange: [ENTER_SCALE, 1],
-              }),
-            },
-          ],
-        },
+        entrance,
       ]}
     >
       <Text

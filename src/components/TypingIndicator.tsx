@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
+import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import { colors, motion, radius, spacing, typography } from '../theme';
 import { bubbleCorners } from './ChatBubble';
 
@@ -9,8 +10,6 @@ const DOT_RISE = 3;
 const DOT_STAGGER_MS = 160;
 const DOT_STEP_MS = 300;
 const DOT_REST_MS = 200;
-const FADE_IN_MS = 150;
-const ENTER_SCALE = 0.85;
 
 type Props = {
   /** First item of Mike's group: rounds the top corner next to the avatar. */
@@ -26,35 +25,14 @@ export default function TypingIndicator({
   isFirstInGroup = true,
   reduceMotion = false,
 }: Props) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const enter = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+  const entrance = useEntranceAnimation({
+    animate: true,
+    reduceMotion,
+    fromScale: 0.85,
+  });
   const dots = useRef(
     Array.from({ length: DOT_COUNT }, () => new Animated.Value(0)),
   ).current;
-
-  useEffect(() => {
-    const fade = Animated.timing(opacity, {
-      toValue: 1,
-      duration: FADE_IN_MS,
-      easing: motion.easeStandard,
-      useNativeDriver: true,
-    });
-    const animation = reduceMotion
-      ? fade
-      : Animated.parallel([
-          fade,
-          Animated.spring(enter, {
-            toValue: 1,
-            ...motion.springPop,
-            useNativeDriver: true,
-          }),
-        ]);
-
-    animation.start();
-    return () => animation.stop();
-    // Entrance runs once, on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     // Every loop has the same total length, so the wave stays in phase.
@@ -92,17 +70,7 @@ export default function TypingIndicator({
       style={[
         styles.bubble,
         bubbleCorners('mike', isFirstInGroup, true),
-        {
-          opacity,
-          transform: [
-            {
-              scale: enter.interpolate({
-                inputRange: [0, 1],
-                outputRange: [ENTER_SCALE, 1],
-              }),
-            },
-          ],
-        },
+        entrance,
       ]}
     >
       <View style={styles.dots}>
