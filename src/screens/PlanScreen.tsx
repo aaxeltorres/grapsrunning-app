@@ -1,35 +1,45 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Animated, Text, StyleSheet } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
-import { colors, motion, spacing, typography } from '../theme';
+import { colors, motion, typography } from '../theme';
 import TopBar from '../components/TopBar';
-import MikeAvatar from '../components/MikeAvatar';
 import OnboardingChat from '../components/OnboardingChat';
-import { generatePlan } from '../coach/generatePlan';
+import PlanOverview from '../components/PlanOverview';
 import { planOnboardingScript } from '../coach/planOnboardingScript';
-import type { RunnerProfile } from '../coach/runnerProfile';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import { usePlanOnboarding } from '../hooks/usePlanOnboarding';
 import { useReduceMotion } from '../hooks/useReduceMotion';
+import { todayISO } from '../utils/dates';
 import { successNotification } from '../utils/haptics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
 const CHAT_EXIT_MS = 280;
 const CHAT_EXIT_OFFSET = -16;
+const SETTINGS_BUTTON_SIZE = 34;
 
 /**
  * Training plan section. On the first visit Mike runs a chat onboarding
- * (resumed where the user left off); afterwards the plan will live here.
+ * (resumed where the user left off), which then turns into the plan.
+ * Later visits open the plan directly.
  */
-export default function PlanScreen({}: Props) {
-  const { status, profile, markDone, finish, reset } = usePlanOnboarding();
+export default function PlanScreen({ navigation }: Props) {
+  const { status, profile, plan, confirm, finish, reset } =
+    usePlanOnboarding();
   const reduceMotion = useReduceMotion();
+  const [today] = useState(todayISO);
   // Bumped on dev reset to remount the chat and replay it from the start.
   const [chatRun, setChatRun] = useState(0);
-  // The plan view animates in only when arriving from the chat.
+  // The plan animates in only when arriving from the chat.
   const [cameFromChat, setCameFromChat] = useState(false);
   const chatExit = useRef(new Animated.Value(0)).current;
   const isLeavingChatRef = useRef(false);
@@ -42,17 +52,6 @@ export default function PlanScreen({}: Props) {
     setChatRun((run) => run + 1);
     successNotification();
   }, [reset, chatExit]);
-
-  const handleConfirm = useCallback(
-    (confirmedProfile: RunnerProfile) => {
-      markDone();
-      // TODO: keep the plan once the Plan UI exists.
-      generatePlan(confirmedProfile).catch((error) =>
-        console.warn('Failed to generate plan', error),
-      );
-    },
-    [markDone],
-  );
 
   const handleChatComplete = useCallback(() => {
     if (isLeavingChatRef.current) return;
@@ -68,6 +67,12 @@ export default function PlanScreen({}: Props) {
       successNotification();
     });
   }, [chatExit, finish]);
+
+  // No structured execution yet: every workout starts a free run.
+  const handleStartWorkout = useCallback(
+    () => navigation.navigate('ActiveRun'),
+    [navigation],
+  );
 
   const chatExitStyle = {
     opacity: chatExit.interpolate({
@@ -87,12 +92,14 @@ export default function PlanScreen({}: Props) {
   };
 
   return (
-    // Bottom inset is applied inside the chat so messages scroll under the home indicator.
+    // Bottom inset is applied inside the scroll views, so content scrolls
+    // under the home indicator.
     <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <TopBar
         title="Plan"
         // Dev-only: long-press the title to replay the onboarding.
         onTitleLongPress={__DEV__ ? handleDevReset : undefined}
+        right={status === 'done' ? <SettingsButton /> : undefined}
       />
 
       {status === 'pending' && (
@@ -101,45 +108,72 @@ export default function PlanScreen({}: Props) {
             key={chatRun}
             script={planOnboardingScript}
             initialProfile={profile}
-            onConfirm={handleConfirm}
+            onConfirm={confirm}
             onComplete={handleChatComplete}
           />
         </Animated.View>
       )}
 
-      {status === 'done' && (
-        <PlanOnTheWay animate={cameFromChat} reduceMotion={reduceMotion} />
-      )}
+      {status === 'done' &&
+        (plan ? (
+          <EnterView animate={cameFromChat} reduceMotion={reduceMotion}>
+            <PlanOverview
+              plan={plan}
+              today={today}
+              gentle={profile.injuryStatus === 'hurts_now'}
+              reduceMotion={reduceMotion}
+              onStartWorkout={handleStartWorkout}
+            />
+          </EnterView>
+        ) : (
+          <View style={styles.loading}>
+            <ActivityIndicator color={colors.textSecondary} />
+          </View>
+        ))}
     </SafeAreaView>
   );
 }
 
-/** Placeholder until the plan UI exists. */
-function PlanOnTheWay({
+/** Gear placeholder: plan settings will open from here. */
+function SettingsButton() {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Plan settings"
+      accessibilityHint="Coming soon"
+      hitSlop={8}
+      style={({ pressed }) => [
+        styles.settingsButton,
+        pressed && styles.settingsPressed,
+      ]}
+    >
+      <Text
+        maxFontSizeMultiplier={1.2}
+        style={[typography.headline, styles.settingsIcon]}
+      >
+        ⚙︎
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Slides the plan up into place when it replaces the chat. */
+function EnterView({
   animate,
   reduceMotion,
+  children,
 }: {
   animate: boolean;
   reduceMotion: boolean;
+  children: React.ReactNode;
 }) {
   const entrance = useEntranceAnimation({
     animate,
     reduceMotion,
     offsetY: 24,
-    fromScale: 0.96,
   });
-
   return (
-    <Animated.View style={[styles.emptyState, entrance]}>
-      <MikeAvatar size={64} />
-      <Text style={[typography.title2, styles.emptyTitle]}>
-        Your plan is on its way
-      </Text>
-      <Text style={[typography.body, styles.emptyBody]}>
-        Mike is putting your training plan together. It will show up here
-        soon.
-      </Text>
-    </Animated.View>
+    <Animated.View style={[styles.fill, entrance]}>{children}</Animated.View>
   );
 }
 
@@ -151,20 +185,23 @@ const styles = StyleSheet.create({
   fill: {
     flex: 1,
   },
-  emptyState: {
+  loading: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
   },
-  emptyTitle: {
+  settingsButton: {
+    width: SETTINGS_BUTTON_SIZE,
+    height: SETTINGS_BUTTON_SIZE,
+    borderRadius: SETTINGS_BUTTON_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceGray,
+  },
+  settingsPressed: {
+    opacity: 0.6,
+  },
+  settingsIcon: {
     color: colors.textPrimary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  emptyBody: {
-    color: colors.textSecondary,
-    textAlign: 'center',
   },
 });

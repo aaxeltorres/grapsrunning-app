@@ -9,12 +9,15 @@ type Props = {
   showLogo?: boolean;
   /** Long-press on the title, e.g. for dev-only shortcuts. */
   onTitleLongPress?: () => void;
+  /** Replaces the profile placeholder on the right. */
+  right?: React.ReactNode;
 };
 
 export default function TopBar({
   title,
   showLogo = false,
   onTitleLongPress,
+  right,
 }: Props) {
   return (
     <View style={styles.container}>
@@ -40,11 +43,13 @@ export default function TopBar({
           </Text>
         )}
       </View>
-      <IconPlaceholder
-        size={30}
-        backgroundColor={colors.surfaceGray}
-        style={styles.profileIcon}
-      />
+      {right ?? (
+        <IconPlaceholder
+          size={30}
+          backgroundColor={colors.surfaceGray}
+          style={styles.profileIcon}
+        />
+      )}
     </View>
   );
 }

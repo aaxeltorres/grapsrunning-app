@@ -11,7 +11,13 @@ import { colors, radius, spacing, typography } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-type Variant = 'primary' | 'secondary' | 'outline' | 'runPause' | 'runFinish';
+type Variant =
+  | 'primary'
+  | 'accent'
+  | 'secondary'
+  | 'outline'
+  | 'runPause'
+  | 'runFinish';
 type Appearance = 'light' | 'dark';
 
 type Props = {
@@ -101,7 +107,7 @@ export default function Button({
         ? runFinishLabelColor
         : variant === 'outline'
           ? outlineLabelColor
-          : variant === 'primary'
+          : variant === 'primary' || variant === 'accent'
             ? colors.white
             : colors.textPrimary;
 
@@ -135,7 +141,7 @@ export default function Button({
     >
       {leftAdornment}
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? colors.white : themedLabelColors[appearance]} />
+        <ActivityIndicator color={variant === 'primary' || variant === 'accent' ? colors.white : themedLabelColors[appearance]} />
       ) : (
         <Animated.Text style={[typography.headline, { color: labelColor }]}>
           {label}
@@ -166,6 +172,10 @@ const styles = StyleSheet.create({
 const variantStyles: Record<Variant, ViewStyle> = {
   primary: {
     backgroundColor: colors.black,
+  },
+  // Brand action blue, as on the Home "Start run" button.
+  accent: {
+    backgroundColor: colors.iosBlue,
   },
   secondary: {
     backgroundColor: colors.surfaceGray,

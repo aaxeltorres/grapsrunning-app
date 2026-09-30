@@ -49,6 +49,15 @@ export const colors = {
   chatTypingDot: '#8E8E93',
   iosGreen: '#34C759', // iOS system green: selected answer tiles
 
+  // Plan: workout types (calendar dots, legend)
+  workoutEasy: '#2ECC71', // same green as the Stats accents
+  workoutIntervals: '#FF8A3D', // same orange as the Stats accents
+  workoutLong: '#0080FF', // same blue as the Stats accents
+  // Plan: workout card on the Plan peach (cardPlanBg)
+  planCardAccent: '#C2410C', // deep orange text on peach
+  planSegmentMuted: '#FFD7B0', // warm-up / cool-down part of the segment bar
+  planSelectedDayBg: '#E3F2FD', // selected (not today) day, soft Coach blue
+
   // Bottom sheets
   sheetBackdrop: 'rgba(0,0,0,0.4)',
   sheetGrabber: '#D1D1D6',

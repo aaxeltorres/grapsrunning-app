@@ -299,7 +299,25 @@ export const planOnboardingScript: ChatScriptStep[] = [
   {
     type: 'message',
     id: 'outro-plan',
-    text: "Perfect! I'm putting your plan together now. You'll find it right here soon.",
+    text: "Perfect! Give me a second while I put your plan together…",
     typingMs: 2000,
   },
 ];
+
+/**
+ * Mike's one-liner above the selected day's workout on the Plan screen.
+ * Keep them short and warm: they sit in a single chat bubble.
+ */
+export const planDayMessages = {
+  easy: 'Nice and easy today. Keep it chatty and enjoy the run! 😊',
+  runWalk: 'Run a little, walk a little. Every minute counts! 👟',
+  intervals: 'Speed day! Warm up well and enjoy the fast bits. ⚡️',
+  long: 'Long run day. Settle into a relaxed pace and enjoy every kilometer. 🌄',
+  rest: 'Rest day! Recovery is when you get stronger, so put your feet up. 🛋️',
+  completed: "Done and dusted. Great work, I'm proud of you! 🎉",
+  skipped: "No worries about this one. We'll pick it up on the next run. 💙",
+  gentle: 'Easy does it today. Stop if anything hurts, your body comes first. 💙',
+  noWorkout: 'Nothing planned here. Your plan starts on the days you picked. 📅',
+} as const;
+
+export type PlanDayMessageKey = keyof typeof planDayMessages;

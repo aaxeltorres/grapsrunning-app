@@ -17,3 +17,6 @@ export { default as BottomSheet } from './BottomSheet';
 export { default as OptionTile } from './OptionTile';
 export { default as WheelPicker } from './WheelPicker';
 export { default as RecapCard } from './RecapCard';
+export { default as SegmentedControl } from './SegmentedControl';
+export { default as WorkoutCard } from './WorkoutCard';
+export { default as PlanOverview } from './PlanOverview';

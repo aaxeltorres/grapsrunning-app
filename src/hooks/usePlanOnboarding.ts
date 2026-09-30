@@ -1,65 +1,122 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { buildTranscript } from '../coach/conversation';
+import { generatePlan } from '../coach/generatePlan';
+import type { Plan } from '../coach/plan';
+import { planOnboardingScript } from '../coach/planOnboardingScript';
 import { createEmptyProfile, type RunnerProfile } from '../coach/runnerProfile';
+import { planStorage } from '../storage/planStorage';
 import { profileStorage } from '../storage/profileStorage';
 
 const PLAN_ONBOARDING_DONE_KEY = 'plan_onboarding_done';
 
 export type PlanOnboardingStatus = 'loading' | 'pending' | 'done';
 
+function isProfileComplete(profile: RunnerProfile) {
+  return buildTranscript(planOnboardingScript, profile, {
+    recapConfirmed: true,
+  }).isComplete;
+}
+
+async function createAndSavePlan(profile: RunnerProfile): Promise<Plan> {
+  const plan = await generatePlan(profile);
+  await planStorage
+    .save(plan)
+    .catch((error) => console.warn('Failed to save plan', error));
+  return plan;
+}
+
 /**
- * Loads whether the user has finished Mike's Plan onboarding, plus the
- * answers saved so far (to resume a half-finished conversation).
+ * State of the Plan section: whether Mike's onboarding is done, the
+ * answers saved so far (to resume a half-finished conversation) and the
+ * training plan.
  */
 export function usePlanOnboarding() {
   const [status, setStatus] = useState<PlanOnboardingStatus>('loading');
   const [profile, setProfile] = useState<RunnerProfile>(createEmptyProfile);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let active = true;
+    mountedRef.current = true;
 
-    Promise.all([
-      AsyncStorage.getItem(PLAN_ONBOARDING_DONE_KEY).catch(() => null),
-      profileStorage.get().catch(() => createEmptyProfile()),
-    ]).then(([flag, storedProfile]) => {
-      if (!active) return;
+    const load = async () => {
+      const [flag, storedProfile, storedPlan] = await Promise.all([
+        AsyncStorage.getItem(PLAN_ONBOARDING_DONE_KEY).catch(() => null),
+        profileStorage.get().catch(() => createEmptyProfile()),
+        planStorage.get().catch(() => null),
+      ]);
+      if (!mountedRef.current) return;
       setProfile(storedProfile);
-      setStatus(flag === 'true' ? 'done' : 'pending');
+
+      if (flag !== 'true') {
+        setStatus('pending');
+        return;
+      }
+      if (storedPlan) {
+        setPlan(storedPlan);
+        setStatus('done');
+        return;
+      }
+      // Finished the onboarding before plans existed: build the plan from
+      // the saved answers, without replaying the chat.
+      if (isProfileComplete(storedProfile)) {
+        const created = await createAndSavePlan(storedProfile);
+        if (!mountedRef.current) return;
+        setPlan(created);
+        setStatus('done');
+        return;
+      }
+      // Nothing to build a plan from: let Mike ask.
+      setStatus('pending');
+    };
+
+    load().catch((error) => {
+      console.warn('Failed to load Plan', error);
+      if (mountedRef.current) setStatus('pending');
     });
 
     return () => {
-      active = false;
+      mountedRef.current = false;
     };
   }, []);
 
   /**
-   * Saves the flag for future visits. Leaves `status` untouched so Mike
-   * can finish the conversation; call `finish` to leave it.
+   * The user confirmed their answers: marks the onboarding as done and
+   * builds and saves the plan. `status` stays 'pending' so Mike can
+   * finish the conversation; call `finish` to show the plan.
    */
-  const markDone = useCallback(async () => {
+  const confirm = useCallback(async (confirmedProfile: RunnerProfile) => {
+    setProfile(confirmedProfile);
+    AsyncStorage.setItem(PLAN_ONBOARDING_DONE_KEY, 'true').catch((error) =>
+      console.warn('Failed to save Plan onboarding flag', error),
+    );
     try {
-      await AsyncStorage.setItem(PLAN_ONBOARDING_DONE_KEY, 'true');
+      const created = await createAndSavePlan(confirmedProfile);
+      if (mountedRef.current) setPlan(created);
     } catch (error) {
-      console.warn('Failed to save Plan onboarding flag', error);
+      console.warn('Failed to generate plan', error);
     }
   }, []);
 
   /** Switches the screen from the onboarding chat to the plan. */
   const finish = useCallback(() => setStatus('done'), []);
 
-  /** Dev helper: clears the flag and the answers so the onboarding starts over. */
+  /** Dev helper: clears the flag, answers and plan so everything starts over. */
   const reset = useCallback(async () => {
     try {
       await Promise.all([
         AsyncStorage.removeItem(PLAN_ONBOARDING_DONE_KEY),
         profileStorage.clear(),
+        planStorage.clear(),
       ]);
     } catch (error) {
       console.warn('Failed to reset Plan onboarding', error);
     }
     setProfile(createEmptyProfile());
+    setPlan(null);
     setStatus('pending');
   }, []);
 
-  return { status, profile, markDone, finish, reset };
+  return { status, profile, plan, confirm, finish, reset };
 }
