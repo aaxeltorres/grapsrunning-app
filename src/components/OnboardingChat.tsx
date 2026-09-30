@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -26,22 +26,29 @@ import AnswerBubble from './AnswerBubble';
 import AnswerSheet from './AnswerSheet';
 import ChatBubble from './ChatBubble';
 import MikeAvatar from './MikeAvatar';
+import RecapCard from './RecapCard';
 import TypingIndicator from './TypingIndicator';
 
 const AVATAR_FADE_MS = 150;
+// Time to read Mike's last message before `onComplete`.
+const COMPLETE_HOLD_MS = 1400;
 
 type Props = {
   /** Script to play. Must be a stable reference, e.g. a module constant. */
   script: ChatScriptStep[];
   /** Answers saved so far; earlier messages render instantly. */
   initialProfile: RunnerProfile;
-  /** Called once every question is answered and Mike has finished. */
+  /** The user confirmed the recap card, with the final answers. */
+  onConfirm?: (profile: RunnerProfile) => void;
+  /** Called once the whole script has played and Mike has finished. */
   onComplete?: () => void;
 };
 
 type SheetState = {
   questionId: QuestionId | null;
   visible: boolean;
+  /** Visible or still animating out. */
+  active: boolean;
   /** Bumped on every open so the sheet starts from a fresh draft. */
   openCount: number;
 };
@@ -74,24 +81,34 @@ function entryKey(entry: ChatDisplayItem) {
   return entry.type === 'typing' ? `typing:${entry.id}` : entry.item.id;
 }
 
+function noop() {}
+
 /**
  * Coach Mike's scripted chat. Mike asks, the user answers through bottom
- * sheets, Mike reacts. Every answer is saved right away; answers can be
- * edited by tapping them.
+ * sheets, Mike reacts, and a recap card closes the conversation. Every
+ * answer is saved right away; answers can be edited by tapping them (or
+ * their recap row) until the user confirms the recap.
  */
 export default function OnboardingChat({
   script,
   initialProfile,
+  onConfirm,
   onComplete,
 }: Props) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
   const scrollRef = useRef<ScrollView>(null);
 
+  // `profile` drives the transcript. `savedProfileRef` is the latest saved
+  // version: it runs ahead of `profile` while the sheet animates out.
   const [profile, setProfile] = useState(initialProfile);
+  const savedProfileRef = useRef(initialProfile);
+  const [recapConfirmed, setRecapConfirmed] = useState(false);
+  const recapConfirmedRef = useRef(false);
+
   const transcript = useMemo(
-    () => buildTranscript(script, profile),
-    [script, profile],
+    () => buildTranscript(script, profile, { recapConfirmed }),
+    [script, profile, recapConfirmed],
   );
   const [initialRevealCount] = useState(() =>
     resumeRevealCount(transcript.items),
@@ -100,7 +117,7 @@ export default function OnboardingChat({
   const { displayItems, isIdle } = useChatReveal(transcript.items, {
     initialRevealCount,
     onReveal: (item: TranscriptItem) => {
-      if (item.kind === 'mike') lightImpact();
+      if (item.kind !== 'answer') lightImpact();
     },
   });
 
@@ -113,57 +130,96 @@ export default function OnboardingChat({
   const [sheet, setSheet] = useState<SheetState>({
     questionId: null,
     visible: false,
+    active: false,
     openCount: 0,
   });
-  // Applied once the sheet has finished closing, so the answer bubble
-  // pops in view rather than behind the backdrop.
-  const pendingAnswerRef = useRef<{
-    question: QuestionStep;
-    value: AnswerValue;
-  } | null>(null);
+  // Saved answer that is shown once the sheet has finished closing, so the
+  // answer bubble pops in view rather than behind the backdrop.
+  const pendingProfileRef = useRef<RunnerProfile | null>(null);
 
-  const applyAnswer = (question: QuestionStep, value: AnswerValue) => {
-    if (isSameAnswer(getAnswer(question, profile), value)) return;
-
-    const next = withAnswer(script, profile, question, value);
-    setProfile(next);
+  const flushPendingAnswer = useCallback(() => {
+    const pending = pendingProfileRef.current;
+    pendingProfileRef.current = null;
+    if (!pending) return;
+    setProfile(pending);
     lightImpact();
-    profileStorage
-      .save(next)
-      .catch((error) => console.warn('Failed to save runner profile', error));
-  };
+  }, []);
 
-  const flushPendingAnswer = () => {
-    const pending = pendingAnswerRef.current;
-    pendingAnswerRef.current = null;
-    if (pending) applyAnswer(pending.question, pending.value);
-  };
+  const openSheet = useCallback(
+    (questionId: QuestionId) => {
+      if (recapConfirmedRef.current) return;
+      // Reopening while the previous sheet is still closing.
+      flushPendingAnswer();
+      setSheet((current) =>
+        current.visible
+          ? current
+          : {
+              questionId,
+              visible: true,
+              active: true,
+              openCount: current.openCount + 1,
+            },
+      );
+    },
+    [flushPendingAnswer],
+  );
 
-  const openSheet = (questionId: QuestionId) => {
-    if (sheet.visible) return;
-    // Reopening while the previous sheet is still closing.
-    flushPendingAnswer();
-    setSheet((current) =>
-      current.visible
-        ? current
-        : { questionId, visible: true, openCount: current.openCount + 1 },
-    );
-  };
+  // Stable handlers per question, so memoized answer bubbles skip renders.
+  const answerPressHandlers = useMemo(() => {
+    const handlers = new Map<QuestionId, () => void>();
+    questions.forEach((_, id) => handlers.set(id, () => openSheet(id)));
+    return handlers;
+  }, [questions, openSheet]);
 
   const handleConfirm = (value: AnswerValue) => {
     const question = sheet.questionId && questions.get(sheet.questionId);
     if (!sheet.visible || !question) return;
-    pendingAnswerRef.current = { question, value };
+
+    const saved = savedProfileRef.current;
+    if (!isSameAnswer(getAnswer(question, saved), value)) {
+      const next = withAnswer(script, saved, question, value);
+      savedProfileRef.current = next;
+      pendingProfileRef.current = next;
+      // Saved before the sheet animates out, so leaving the screen right
+      // away can't lose the answer.
+      profileStorage
+        .save(next)
+        .catch((error) => console.warn('Failed to save runner profile', error));
+    }
     setSheet((current) => ({ ...current, visible: false }));
   };
 
   const handleDismiss = () =>
     setSheet((current) => ({ ...current, visible: false }));
 
+  const handleSheetClosed = () => {
+    flushPendingAnswer();
+    setSheet((current) =>
+      current.visible ? current : { ...current, active: false },
+    );
+  };
+
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+  const handleRecapConfirm = useCallback(() => {
+    if (recapConfirmedRef.current) return;
+    recapConfirmedRef.current = true;
+    setRecapConfirmed(true);
+    lightImpact();
+    onConfirmRef.current?.(savedProfileRef.current);
+  }, []);
+  // Not while Mike is still typing or a sheet is open or closing.
+  const canConfirmRecap = isIdle && !sheet.active;
+
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   useEffect(() => {
-    if (transcript.isComplete && isIdle) onCompleteRef.current?.();
+    if (!transcript.isComplete || !isIdle) return;
+    const timer = setTimeout(
+      () => onCompleteRef.current?.(),
+      COMPLETE_HOLD_MS,
+    );
+    return () => clearTimeout(timer);
   }, [transcript.isComplete, isIdle]);
 
   // Follow the conversation when something new appears at the bottom.
@@ -205,8 +261,11 @@ export default function OnboardingChat({
             key={index}
             group={group}
             reduceMotion={reduceMotion}
-            questionLabel={(id) => questions.get(id)?.sheetTitle ?? ''}
-            onAnswerPress={openSheet}
+            questions={questions}
+            answerPressHandlers={answerPressHandlers}
+            onRecapRowPress={openSheet}
+            onRecapConfirm={handleRecapConfirm}
+            canConfirmRecap={canConfirmRecap}
           />
         ))}
       </ScrollView>
@@ -214,13 +273,15 @@ export default function OnboardingChat({
       <AnswerSheet
         question={sheetQuestion}
         initialValue={
-          sheetQuestion ? getAnswer(sheetQuestion, profile) : undefined
+          sheetQuestion
+            ? getAnswer(sheetQuestion, savedProfileRef.current)
+            : undefined
         }
         visible={sheet.visible}
         contentKey={sheet.openCount}
         onConfirm={handleConfirm}
         onDismiss={handleDismiss}
-        onClosed={flushPendingAnswer}
+        onClosed={handleSheetClosed}
         reduceMotion={reduceMotion}
       />
     </>
@@ -230,13 +291,19 @@ export default function OnboardingChat({
 function ChatGroup({
   group,
   reduceMotion,
-  questionLabel,
-  onAnswerPress,
+  questions,
+  answerPressHandlers,
+  onRecapRowPress,
+  onRecapConfirm,
+  canConfirmRecap,
 }: {
   group: MessageGroup;
   reduceMotion: boolean;
-  questionLabel: (id: QuestionId) => string;
-  onAnswerPress: (id: QuestionId) => void;
+  questions: Map<QuestionId, QuestionStep>;
+  answerPressHandlers: Map<QuestionId, () => void>;
+  onRecapRowPress: (id: QuestionId) => void;
+  onRecapConfirm: () => void;
+  canConfirmRecap: boolean;
 }) {
   const isMike = group.sender === 'mike';
   const first = group.entries[0];
@@ -268,8 +335,25 @@ function ChatGroup({
               <AnswerBubble
                 key={item.id}
                 text={item.text}
-                questionLabel={questionLabel(item.questionId)}
-                onPress={() => onAnswerPress(item.questionId)}
+                questionLabel={questions.get(item.questionId)?.sheetTitle ?? ''}
+                onPress={answerPressHandlers.get(item.questionId) ?? noop}
+                animateOnMount={entry.animate}
+                reduceMotion={reduceMotion}
+              />
+            );
+          }
+
+          if (item.kind === 'recap') {
+            return (
+              <RecapCard
+                key={item.id}
+                title={item.title}
+                rows={item.rows}
+                confirmLabel={item.confirmLabel}
+                confirmed={item.confirmed}
+                canConfirm={canConfirmRecap}
+                onRowPress={onRecapRowPress}
+                onConfirm={onRecapConfirm}
                 animateOnMount={entry.animate}
                 reduceMotion={reduceMotion}
               />

@@ -12,6 +12,8 @@ import type { ChatScriptStep } from './types';
  * - After an answer Mike sends the matching entry from `reactions`
  *   (or `countReactions`), otherwise the `defaultReaction`.
  * - Keep messages short: one idea per bubble reads best.
+ * - The 'recap' step shows every answer with a confirm button; the
+ *   steps after it play once the user confirms.
  */
 export const planOnboardingScript: ChatScriptStep[] = [
   {
@@ -41,6 +43,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'wheel',
     text: "First things first: what's your main goal right now?",
     sheetTitle: 'Your goal',
+    recapLabel: 'Goal',
     options: [
       { id: 'first_5k', label: 'Run my first 5K' },
       { id: 'run_5k_nonstop', label: 'Run 5K without stopping' },
@@ -99,6 +102,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'wheel', // or 'cards'
     text: 'How would you describe your running right now?',
     sheetTitle: 'Your current level',
+    recapLabel: 'Level',
     options: [
       { id: 'not_running', label: "I don't run yet" },
       { id: 'run_walk', label: 'I can run/walk for 10-15 minutes' },
@@ -127,6 +131,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'days',
     text: 'Which days can you usually train?',
     sheetTitle: 'Your training days',
+    recapLabel: 'Training days',
     options: [
       { id: 'mon', label: 'Mon' },
       { id: 'tue', label: 'Tue' },
@@ -173,6 +178,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'wheel',
     text: 'How old are you?',
     sheetTitle: 'Your age',
+    recapLabel: 'Age',
     min: 14,
     max: 90,
     defaultValue: 25,
@@ -189,6 +195,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'wheel',
     text: "What's your height?",
     sheetTitle: 'Your height',
+    recapLabel: 'Height',
     min: 120,
     max: 230,
     defaultValue: 170,
@@ -202,6 +209,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'wheel',
     text: 'And your weight?',
     sheetTitle: 'Your weight',
+    recapLabel: 'Weight',
     min: 30,
     max: 250,
     defaultValue: 70,
@@ -218,6 +226,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
     input: 'multiselect',
     text: 'Any injuries or sore spots I should know about?',
     sheetTitle: 'Injuries',
+    recapLabel: 'Injuries',
     options: [
       { id: 'none', label: 'No injuries' },
       { id: 'knee', label: 'Knee' },
@@ -258,6 +267,7 @@ export const planOnboardingScript: ChatScriptStep[] = [
       !!profile.injuries?.length && !profile.injuries.includes('none'),
     text: 'How is it feeling these days?',
     sheetTitle: 'How it feels now',
+    recapLabel: 'Injury status',
     options: [
       { id: 'recovered', label: 'Fully recovered' },
       { id: 'sometimes_bothers', label: 'It sometimes bothers me' },
@@ -277,11 +287,19 @@ export const planOnboardingScript: ChatScriptStep[] = [
   {
     type: 'message',
     id: 'outro-thanks',
-    text: "That's everything I need, thank you! 🙌",
+    text: "That's everything I need, thank you! 🙌 Here's a quick recap. Tap anything you'd like to change.",
   },
+  {
+    type: 'recap',
+    id: 'recap',
+    title: 'Your answers',
+    confirmLabel: 'Looks good ✅',
+  },
+  // Plays once the user confirms the recap.
   {
     type: 'message',
     id: 'outro-plan',
-    text: "I'm putting your plan together now. You'll find it right here soon.",
+    text: "Perfect! I'm putting your plan together now. You'll find it right here soon.",
+    typingMs: 2000,
   },
 ];

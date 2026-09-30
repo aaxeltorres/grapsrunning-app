@@ -17,24 +17,49 @@ import type {
 
 const ANSWER_SEPARATOR = ' · ';
 
+export type RecapRow = {
+  questionId: QuestionId;
+  label: string;
+  value: string;
+};
+
 export type TranscriptItem =
-  | { kind: 'mike'; id: string; text: string }
+  | {
+      kind: 'mike';
+      id: string;
+      text: string;
+      /** Fixed typing indicator duration, when the script sets one. */
+      typingMs?: number;
+    }
   | {
       kind: 'answer';
       id: string;
       questionId: QuestionId;
       /** `null` while the question is waiting for an answer. */
       text: string | null;
+    }
+  | {
+      kind: 'recap';
+      id: string;
+      title: string;
+      confirmLabel: string;
+      rows: RecapRow[];
+      confirmed: boolean;
     };
 
 export type Transcript = {
   items: TranscriptItem[];
-  /** Every applicable question is answered. */
+  /** The whole script has played: every question answered, recap confirmed. */
   isComplete: boolean;
 };
 
+export type TranscriptOptions = {
+  /** The user confirmed the recap card. */
+  recapConfirmed?: boolean;
+};
+
 export function isQuestionStep(step: ChatScriptStep): step is QuestionStep {
-  return step.type !== 'message';
+  return step.type !== 'message' && step.type !== 'recap';
 }
 
 export function isAsked(question: QuestionStep, profile: RunnerProfile) {
@@ -142,19 +167,56 @@ function pickVariant(copy: MikeCopy, seed: string) {
   return { key: `default-${index}`, text: variants[index] };
 }
 
+/** Every answer given so far, in script order, for the recap card. */
+export function recapRows(
+  script: ChatScriptStep[],
+  profile: RunnerProfile,
+): RecapRow[] {
+  const rows: RecapRow[] = [];
+  for (const step of script) {
+    if (!isQuestionStep(step) || !isAsked(step, profile)) continue;
+    const answer = getAnswer(step, profile);
+    if (answer === undefined) continue;
+    rows.push({
+      questionId: step.id,
+      label: step.recapLabel,
+      value: formatAnswer(step, answer),
+    });
+  }
+  return rows;
+}
+
 /**
- * Builds the conversation up to the first unanswered question, which ends
- * with a pending answer bubble.
+ * Builds the conversation up to the first unanswered question (which ends
+ * with a pending answer bubble) or the unconfirmed recap card.
  */
 export function buildTranscript(
   script: ChatScriptStep[],
   profile: RunnerProfile,
+  { recapConfirmed = false }: TranscriptOptions = {},
 ): Transcript {
   const items: TranscriptItem[] = [];
 
   for (const step of script) {
-    if (!isQuestionStep(step)) {
-      items.push({ kind: 'mike', id: step.id, text: step.text });
+    if (step.type === 'message') {
+      items.push({
+        kind: 'mike',
+        id: step.id,
+        text: step.text,
+        typingMs: step.typingMs,
+      });
+      continue;
+    }
+    if (step.type === 'recap') {
+      items.push({
+        kind: 'recap',
+        id: step.id,
+        title: step.title,
+        confirmLabel: step.confirmLabel,
+        rows: recapRows(script, profile),
+        confirmed: recapConfirmed,
+      });
+      if (!recapConfirmed) return { items, isComplete: false };
       continue;
     }
     if (!isAsked(step, profile)) continue;

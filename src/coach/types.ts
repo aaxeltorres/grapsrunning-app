@@ -51,6 +51,8 @@ type QuestionBase = {
   text: string;
   /** Title shown at the top of the answer sheet. */
   sheetTitle: string;
+  /** Short row label in the recap card, e.g. "Goal". */
+  recapLabel: string;
   /** Mike's reaction when no specific one applies. */
   defaultReaction: MikeCopy;
   /** Ask only when this returns true for the answers so far. */
@@ -113,7 +115,21 @@ export type MessageStep = {
   /** Unique within the script. */
   id: string;
   text: string;
+  /** Fixed typing indicator duration; by default it follows the length. */
+  typingMs?: number;
+};
+
+/**
+ * Card summarizing every answer, with a confirm button. The conversation
+ * pauses here until the user confirms.
+ */
+export type RecapStep = {
+  type: 'recap';
+  /** Unique within the script. */
+  id: string;
+  title: string;
+  confirmLabel: string;
 };
 
 /** One step of a scripted conversation. */
-export type ChatScriptStep = MessageStep | QuestionStep;
+export type ChatScriptStep = MessageStep | RecapStep | QuestionStep;

@@ -36,8 +36,8 @@ type Options = {
 
 /**
  * Chat engine: reveals transcript items one at a time, in order. Mike's
- * messages get a pause and a typing indicator first; answer bubbles
- * appear after a short pause.
+ * messages get a pause and a typing indicator first; answer bubbles and
+ * cards appear after a short pause.
  *
  * Items are matched by id, so when the transcript changes (an answer is
  * given or edited) only the new items play; everything else stays put.
@@ -87,19 +87,21 @@ export function useChatReveal(
 
     const pause = !hasStartedRef.current
       ? INITIAL_DELAY_MS
-      : item.kind === 'mike'
-        ? PAUSE_BEFORE_MESSAGE_MS
-        : PAUSE_BEFORE_ANSWER_MS;
+      : item.kind === 'answer'
+        ? PAUSE_BEFORE_ANSWER_MS
+        : PAUSE_BEFORE_MESSAGE_MS;
     hasStartedRef.current = true;
 
     timers.push(
       setTimeout(() => {
-        if (item.kind === 'answer') {
+        if (item.kind !== 'mike') {
           reveal();
           return;
         }
         setTypingId(item.id);
-        timers.push(setTimeout(reveal, typingDurationFor(item.text)));
+        timers.push(
+          setTimeout(reveal, item.typingMs ?? typingDurationFor(item.text)),
+        );
       }, pause),
     );
 

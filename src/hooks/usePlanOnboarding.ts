@@ -33,8 +33,8 @@ export function usePlanOnboarding() {
   }, []);
 
   /**
-   * Saves the flag for future visits. Leaves `status` untouched so the
-   * finished conversation stays on screen for the current visit.
+   * Saves the flag for future visits. Leaves `status` untouched so Mike
+   * can finish the conversation; call `finish` to leave it.
    */
   const markDone = useCallback(async () => {
     try {
@@ -43,6 +43,9 @@ export function usePlanOnboarding() {
       console.warn('Failed to save Plan onboarding flag', error);
     }
   }, []);
+
+  /** Switches the screen from the onboarding chat to the plan. */
+  const finish = useCallback(() => setStatus('done'), []);
 
   /** Dev helper: clears the flag and the answers so the onboarding starts over. */
   const reset = useCallback(async () => {
@@ -58,5 +61,5 @@ export function usePlanOnboarding() {
     setStatus('pending');
   }, []);
 
-  return { status, profile, markDone, reset };
+  return { status, profile, markDone, finish, reset };
 }
