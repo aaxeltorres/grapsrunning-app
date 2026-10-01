@@ -26,7 +26,12 @@ export default function ZoneGuideSheet({
 }: Props) {
   const paces = zonePaces(easyPace);
   return (
-    <BottomSheet visible={visible} onDismiss={onDismiss} reduceMotion={reduceMotion}>
+    <BottomSheet
+      visible={visible}
+      onDismiss={onDismiss}
+      dragAnywhere
+      reduceMotion={reduceMotion}
+    >
       <View style={styles.header}>
         <Text style={[typography.title2, styles.title]}>Training zones</Text>
         <Text style={[typography.subheadline, styles.secondary]}>

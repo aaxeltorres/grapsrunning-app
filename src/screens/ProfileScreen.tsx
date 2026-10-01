@@ -337,6 +337,7 @@ export default function ProfileScreen({ navigation }: Props) {
       <BottomSheet
         visible={intensityVisible}
         onDismiss={() => setIntensityVisible(false)}
+        dragAnywhere
         reduceMotion={reduceMotion}
       >
         <View style={styles.syncHeader}>
@@ -372,6 +373,7 @@ export default function ProfileScreen({ navigation }: Props) {
         onDismiss={() => {
           if (!updating) setSyncVisible(false);
         }}
+        dragAnywhere
         reduceMotion={reduceMotion}
       >
         <View style={styles.syncHeader}>

@@ -137,6 +137,7 @@ export default function RunModeScreen({ navigation }: Props) {
       <BottomSheet
         visible={sheetVisible}
         onDismiss={() => setSheetVisible(false)}
+        dragAnywhere
         reduceMotion={reduceMotion}
       >
         <NoWorkoutSheet
