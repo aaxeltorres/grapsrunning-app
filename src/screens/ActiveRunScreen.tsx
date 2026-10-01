@@ -16,8 +16,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 
 /**
  * Active Run shell. Owns the run tracking and the dark theme, and renders
- * the view for the chosen run mode. The screen turns dark when it opens and
- * stays dark, also while the run is paused.
+ * the view for the chosen run mode. The screen turns dark when it opens,
+ * fades back to light while the run is paused and dark again on resume.
  */
 export default function ActiveRunScreen({ navigation, route }: Props) {
   const mode = route.params?.mode ?? DEFAULT_RUN_MODE;
@@ -66,13 +66,13 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     const enter = Animated.parallel([
       Animated.timing(themeAnim, {
         toValue: 1,
-        duration: motion.durationRunEnter,
+        duration: motion.durationRunTheme,
         easing: motion.easeStandard,
         useNativeDriver: false, // colors can't use the native driver
       }),
       Animated.timing(contentOpacity, {
         toValue: 1,
-        duration: motion.durationRunEnter,
+        duration: motion.durationRunTheme,
         easing: motion.easeStandard,
         useNativeDriver: true,
       }),
@@ -89,6 +89,30 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
       startRun();
     }
   }, [entered, permissionState, runState]);
+
+  // Pause and resume fade the theme; the run state changes right away.
+  const fadeTheme = (toValue: 0 | 1) => {
+    if (reduceMotion) {
+      themeAnim.setValue(toValue);
+      return;
+    }
+    Animated.timing(themeAnim, {
+      toValue,
+      duration: motion.durationRunTheme,
+      easing: motion.easeStandard,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handlePause = () => {
+    pauseRun();
+    fadeTheme(0);
+  };
+
+  const handleResume = () => {
+    resumeRun();
+    fadeTheme(1);
+  };
 
   const handleFinish = async () => {
     await finishRun();
@@ -142,8 +166,8 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     paceLabel,
     calories,
     themeAnim,
-    onPause: pauseRun,
-    onResume: resumeRun,
+    onPause: handlePause,
+    onResume: handleResume,
     onFinish: handleFinish,
   };
 
