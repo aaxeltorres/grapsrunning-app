@@ -10,7 +10,7 @@ import GoalRunView from '../components/GoalRunView';
 import PlanRunView from '../components/PlanRunView';
 import { useRunTracking } from '../hooks/useRunTracking';
 import { useReduceMotion } from '../hooks/useReduceMotion';
-import { DEFAULT_RUN_MODE } from '../run/runModes';
+import { DEFAULT_RUN_MODE, RUN_MODES } from '../run/runModes';
 import { buildWorkoutResult, recordWorkoutRun } from '../run/planResult';
 import { computeSplits, isRunTooShort } from '../run/splits';
 import { planStorage } from '../storage/planStorage';
@@ -26,7 +26,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 export default function ActiveRunScreen({ navigation, route }: Props) {
   const mode = route.params?.mode ?? DEFAULT_RUN_MODE;
   const goal = mode === 'goal' ? route.params?.goal : undefined;
-  const workout = mode === 'plan' ? route.params?.workout : undefined;
+  // Plan runs and interval runs both execute a workout; only a plan run
+  // belongs to the Plan.
+  const workout =
+    mode === 'plan' || mode === 'intervals' ? route.params?.workout : undefined;
+  const planWorkout = mode === 'plan' ? workout : undefined;
   const reduceMotion = useReduceMotion();
 
   // Theme progress (0 = light, 1 = dark) drives the background, the text and
@@ -130,7 +134,8 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
    * failure only means the Plan isn't updated.
    */
   const recordPlanRun = async (completedAll: boolean, reps: RepResult[] | undefined) => {
-    if (!workout) return undefined;
+    if (!planWorkout) return undefined;
+    const workout = planWorkout;
     const counts = !isRunTooShort(distanceKm, durationSeconds);
     const partial = !completedAll;
     if (counts && workout.status === 'planned') {
@@ -154,6 +159,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
   const handleFinish = async (summary?: { completedAll: boolean; reps?: RepResult[] }) => {
     await finishRun();
     const reps = summary?.reps;
+    // A free interval run records nothing in the Plan.
     const planned = await recordPlanRun(summary?.completedAll ?? false, reps);
     navigation.replace('RunResults', {
       distanceKm,
@@ -169,8 +175,11 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
       calories,
       splits: computeSplits(runRoute),
       planned,
-      // Only alongside the planned block: a run too short to count shows none.
-      reps: planned && reps && reps.length > 0 ? reps : undefined,
+      // A run too short to count shows none.
+      reps:
+        reps && reps.length > 0 && !isRunTooShort(distanceKm, durationSeconds)
+          ? reps
+          : undefined,
     });
   };
 
@@ -214,6 +223,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     themeAnim,
     goal,
     workout,
+    title: mode === 'intervals' ? RUN_MODES.intervals.name : undefined,
     onPause: handlePause,
     onResume: handleResume,
     onFinish: handleFinish,
@@ -226,7 +236,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
         <Animated.View style={[styles.safeArea, { opacity: contentOpacity }]}>
           {mode === 'goal' ? (
             <GoalRunView {...viewProps} />
-          ) : mode === 'plan' ? (
+          ) : mode === 'plan' || mode === 'intervals' ? (
             <PlanRunView {...viewProps} />
           ) : (
             <BasicRunView {...viewProps} />

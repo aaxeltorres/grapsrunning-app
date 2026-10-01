@@ -74,6 +74,8 @@ function shortClock(seconds: number) {
 
 function counterText(segment: RunSegment) {
   if (!segment.rep) return null;
+  // A block of one rep has nothing to count.
+  if (segment.rep.of === 1 && !segment.set) return null;
   const rep = `Rep ${segment.rep.number} of ${segment.rep.of}`;
   return segment.set ? `Set ${segment.set.number} of ${segment.set.of} · ${rep}` : rep;
 }
@@ -85,6 +87,7 @@ function PlanRun({
   paceLabel,
   themeAnim,
   workout,
+  title,
   segments,
   onPause,
   onResume,
@@ -186,7 +189,7 @@ function PlanRun({
         numberOfLines={1}
         style={[typography.headline, { color: theme.text }]}
       >
-        {paused ? 'Paused' : displayName(workout)}
+        {paused ? 'Paused' : (title ?? displayName(workout))}
       </Animated.Text>
 
       <View style={styles.main}>

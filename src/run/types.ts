@@ -19,6 +19,8 @@ export type RunViewProps = {
   goal?: RunGoal;
   /** Plan workout runs only: the workout to execute, as stored (edits included). */
   workout?: Workout;
+  /** Replaces the workout's own name on the run screen (e.g. "Intervals"). */
+  title?: string;
   onPause: () => void;
   onResume: () => void;
   /**

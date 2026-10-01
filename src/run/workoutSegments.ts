@@ -87,7 +87,12 @@ function describe(
       return { label: 'Cool-down', tone: 'warm' };
     case 'work':
       return {
-        label: step.target.type === 'manual' ? 'Sprint' : 'Fast rep',
+        label:
+          step.target.type === 'manual'
+            ? 'Sprint'
+            : step.zone !== undefined && step.zone <= 2
+              ? 'Rep'
+              : 'Fast rep',
         tone: 'fast',
       };
     case 'recovery':

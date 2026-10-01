@@ -108,8 +108,9 @@ export default function RunResultsScreen({ route, navigation }: Props) {
       ),
     });
   }
-  // The reps of a structured workout, right under planned vs actual.
-  if (planned && reps && reps.length > 0 && !tooShort) {
+  // The reps of a structured workout (plan or intervals), right under
+  // planned vs actual when there is one.
+  if (reps && reps.length > 0 && !tooShort) {
     sections.push({ key: 'reps', node: <RepResultsSection reps={reps} /> });
   }
   if (!tooShort && splits.some((split) => !split.partial)) {
