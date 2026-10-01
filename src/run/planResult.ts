@@ -8,6 +8,7 @@ import {
   totalDistance,
   totalDuration,
   type Plan,
+  type RepResult,
   type Workout,
   type WorkoutResult,
 } from '../coach/plan';
@@ -23,11 +24,13 @@ type RunTotals = {
   durationSeconds: number;
   /** When the run started (ms since epoch). */
   startedAt?: number;
+  /** The work steps as they were run; left out when there were none. */
+  reps?: RepResult[];
 };
 
 /** The numbers worth storing for a finished run. */
 export function buildWorkoutResult(
-  { distanceKm, durationSeconds, startedAt }: RunTotals,
+  { distanceKm, durationSeconds, startedAt, reps }: RunTotals,
   completedAt: Date = new Date(),
 ): WorkoutResult {
   return {
@@ -38,6 +41,7 @@ export function buildWorkoutResult(
       : null,
     completedAt: completedAt.toISOString(),
     ...(startedAt !== undefined && { startedAt }),
+    ...(reps && reps.length > 0 && { reps }),
   };
 }
 

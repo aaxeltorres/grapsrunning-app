@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RunState } from './useRunTracking';
+import type { RepResult } from '../coach/plan';
 import {
   confirmSegment,
   currentSegment,
@@ -21,8 +22,16 @@ import {
   type WorkoutSample,
 } from '../run/workoutEvents';
 import { alertFlags, createAlertState, updateAlerts } from '../run/goalAlerts';
-import { SEGMENT_ALERT_GRACE_KM, SEGMENT_ALERT_GRACE_S } from '../run/workoutConfig';
+import { countdownTicks, segmentAlertTargets } from '../run/stepBehavior';
+import { createRepRecorder, recordEvent } from '../run/repResults';
 import type { RunSegment } from '../run/workoutSegments';
+import {
+  countdownHaptic,
+  mediumImpact,
+  restStartHaptic,
+  successNotification,
+  workStartHaptic,
+} from '../utils/haptics';
 
 type Result = {
   segment: RunSegment | null;
@@ -30,8 +39,10 @@ type Result = {
   progress: SegmentProgress;
   /** Every segment is done (completed or skipped). */
   complete: boolean;
-  /** The current segment's pace is off its target range. */
+  /** The current segment's pace is off its target (see stepBehavior.ts). */
   paceAlert: boolean;
+  /** The work steps run so far (for the macro rest's set summary). */
+  reps: RepResult[];
   skip: () => void;
   /** Done or Ready tapped on a manual segment. */
   confirm: () => void;
@@ -42,6 +53,8 @@ type Result = {
   outcome: () => WorkoutOutcome;
   /** Call before leaving the run with Finish. */
   finishEarly: () => void;
+  /** Every work step recorded, including the one Finish cut short. */
+  recordedReps: () => RepResult[];
   events: WorkoutEventBus;
 };
 
@@ -49,8 +62,11 @@ export type WorkoutOutcome = { completedAll: boolean };
 
 /**
  * Runs a workout on the tracking ticks: starts the engine once tracking
- * runs, advances it on every clock or distance update while running, and
- * keeps the current segment's pace alert. Events go to `events`.
+ * runs, advances it on every clock or distance update while running, keeps
+ * the current segment's pace alert (by its zone and length), records every
+ * work step and plays the step haptics: a firm one when a rep starts, a
+ * soft one when a rest starts and a 3, 2, 1 before a timed rep. Everything
+ * runs on moving time, so a pause freezes it all. Events go to `events`.
  */
 export function useWorkoutRun(
   segments: RunSegment[],
@@ -65,6 +81,10 @@ export function useWorkoutRun(
   const [, setSegmentIndex] = useState(0);
   const [paceAlert, setPaceAlert] = useState(false);
   const skippedRef = useRef(0);
+  const recorderRef = useRef(createRepRecorder());
+  const [reps, setReps] = useState<RepResult[]>([]);
+  // Time left in the current segment at the last tick, for the 3, 2, 1.
+  const countdownRef = useRef<{ index: number; remaining: number } | null>(null);
 
   useEffect(
     () =>
@@ -72,6 +92,16 @@ export function useWorkoutRun(
         if (event.type === 'segmentEnd' && event.reason === 'skipped') {
           skippedRef.current += 1;
         }
+        const recorded = recordEvent(recorderRef.current, event);
+        if (recorded.reps !== recorderRef.current.reps) setReps(recorded.reps);
+        recorderRef.current = recorded;
+
+        if (event.type === 'segmentStart' && event.segment.index > 0) {
+          if (event.segment.kind === 'work') workStartHaptic();
+          else if (event.segment.rest !== null) restStartHaptic();
+          else mediumImpact();
+        }
+        if (event.type === 'workoutComplete') successNotification();
       }),
     [events],
   );
@@ -106,11 +136,20 @@ export function useWorkoutRun(
 
     const state = engineRef.current!;
     const segment = currentSegment(state);
-    if (!segment?.paceRange) return;
-    alertRef.current = updateAlerts(alertRef.current, segmentSample(state, sample), {
-      paceRange: segment.paceRange,
-      grace: { seconds: SEGMENT_ALERT_GRACE_S, km: SEGMENT_ALERT_GRACE_KM },
-    });
+
+    // 3, 2, 1 before a timed rep, from the time left in this segment.
+    const remaining = segmentProgress(state, sample).remaining;
+    const last = countdownRef.current;
+    if (segment && last && last.index === segment.index) {
+      if (countdownTicks(segment, nextSegment(state), last.remaining, remaining).length > 0) {
+        countdownHaptic();
+      }
+    }
+    countdownRef.current = segment ? { index: segment.index, remaining } : null;
+
+    const targets = segment ? segmentAlertTargets(segment) : null;
+    if (!targets) return;
+    alertRef.current = updateAlerts(alertRef.current, segmentSample(state, sample), targets);
     const flag = alertFlags(alertRef.current).pace;
     setPaceAlert((prev) => (prev === flag ? prev : flag));
     // Samples on tracking updates only.
@@ -139,19 +178,28 @@ export function useWorkoutRun(
     if (engineRef.current) apply(finishEngine(engineRef.current, sampleRef.current));
   }, [apply]);
 
+  const recordedReps = useCallback(() => recorderRef.current.reps, []);
+
   const engine = engineRef.current;
   return {
     segment: engine ? currentSegment(engine) : segments[0] ?? null,
     next: engine ? nextSegment(engine) : segments[1] ?? null,
     progress: engine
       ? segmentProgress(engine, sample)
-      : { remaining: initialAmount(segments[0]), fractionLeft: 1, overall: 0 },
+      : {
+          remaining: initialAmount(segments[0]),
+          fractionLeft: 1,
+          overall: 0,
+          elapsedSeconds: 0,
+        },
     complete: engine ? isComplete(engine) : segments.length === 0,
     paceAlert,
+    reps,
     skip,
     confirm,
     outcome,
     finishEarly,
+    recordedReps,
     events,
   };
 }

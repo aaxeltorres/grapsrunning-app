@@ -179,13 +179,15 @@ export type SegmentProgress = {
   remaining: number;
   /** Share of the current segment left, 1 to 0. A manual segment stays at 1. */
   fractionLeft: number;
+  /** Moving seconds since the current segment started (manual timers). */
+  elapsedSeconds: number;
   /** Position in the whole workout by estimated time, 0 to 1. */
   overall: number;
 };
 
 export function segmentProgress(state: EngineState, sample: WorkoutSample): SegmentProgress {
   const segment = currentSegment(state);
-  if (!segment) return { remaining: 0, fractionLeft: 0, overall: 1 };
+  if (!segment) return { remaining: 0, fractionLeft: 0, overall: 1, elapsedSeconds: 0 };
 
   const start = state.segmentStart;
   const { target } = segment;
@@ -208,7 +210,8 @@ export function segmentProgress(state: EngineState, sample: WorkoutSample): Segm
     workoutTotal > 0
       ? (before + (1 - fractionLeft) * segment.estimatedSeconds) / workoutTotal
       : 0;
-  return { remaining, fractionLeft, overall };
+  const elapsedSeconds = Math.max(0, sample.movingSeconds - start.movingSeconds);
+  return { remaining, fractionLeft, overall, elapsedSeconds };
 }
 
 /** The sample relative to the current segment's start (for its alerts). */

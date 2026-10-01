@@ -11,7 +11,9 @@
  *
  * An alert shows only after its condition held for ALERT_HOLD_S, clears
  * after ALERT_CLEAR_S back on track, and nothing alerts during the start
- * grace period. Targets that are not given never alert.
+ * grace period. Targets that are not given never alert. Plan workout
+ * steps can pass their own timing (short steps) and alert on the fast side
+ * only (easy zones); goal runs use the defaults.
  */
 
 import {
@@ -38,6 +40,21 @@ export type AlertTargets = {
   finish?: { distanceKm: number; seconds: number };
   /** Replaces the default start grace (e.g. per workout segment). */
   grace?: { seconds: number; km: number };
+  /**
+   * `fasterOnly`: off track only when faster than the range (easy zones,
+   * where slower is fine). Default `both`.
+   */
+  paceSide?: 'both' | 'fasterOnly';
+  /** Replaces the smoothing window and the hold / clear delays. */
+  timing?: AlertTiming;
+};
+
+export type AlertTiming = { windowS: number; holdS: number; clearS: number };
+
+const DEFAULT_TIMING: AlertTiming = {
+  windowS: PACE_SMOOTHING_WINDOW_S,
+  holdS: ALERT_HOLD_S,
+  clearS: ALERT_CLEAR_S,
 };
 
 type Debounced = {
@@ -69,22 +86,27 @@ export function createAlertState(): AlertState {
 const MIN_WINDOW_KM = 0.005;
 
 /** Pace over the window of moving time, `null` while barely moving. */
-function windowPace(samples: AlertSample[]): number | null {
+function windowPace(samples: AlertSample[], windowS: number): number | null {
   if (samples.length < 2) return null;
   const first = samples[0];
   const last = samples[samples.length - 1];
   const dt = last.movingSeconds - first.movingSeconds;
   const dd = last.distanceKm - first.distanceKm;
-  if (dt < PACE_SMOOTHING_WINDOW_S / 2 || dd < MIN_WINDOW_KM) return null;
+  if (dt < windowS / 2 || dd < MIN_WINDOW_KM) return null;
   return dt / dd;
 }
 
-function debounce(prev: Debounced, raw: boolean, now: number): Debounced {
+function debounce(
+  prev: Debounced,
+  raw: boolean,
+  now: number,
+  timing: AlertTiming,
+): Debounced {
   const since = raw === prev.raw ? prev.since : now;
   const held = now - since;
   const active = prev.active
-    ? raw || held < ALERT_CLEAR_S
-    : raw && held >= ALERT_HOLD_S;
+    ? raw || held < timing.clearS
+    : raw && held >= timing.holdS;
   return { active, raw, since };
 }
 
@@ -95,10 +117,11 @@ export function updateAlerts(
   targets: AlertTargets,
 ): AlertState {
   const now = sample.movingSeconds;
+  const timing = targets.timing ?? DEFAULT_TIMING;
   const samples = [...state.samples, sample].filter(
-    (s) => now - s.movingSeconds <= PACE_SMOOTHING_WINDOW_S,
+    (s) => now - s.movingSeconds <= timing.windowS,
   );
-  const currentPace = windowPace(samples);
+  const currentPace = windowPace(samples, timing.windowS);
   const grace = targets.grace ?? { seconds: ALERT_GRACE_S, km: ALERT_GRACE_KM };
   const ready =
     now >= grace.seconds &&
@@ -108,7 +131,8 @@ export function updateAlerts(
   const paceOff =
     ready &&
     (targets.paceRange !== undefined
-      ? currentPace < targets.paceRange.min || currentPace > targets.paceRange.max
+      ? currentPace < targets.paceRange.min ||
+        (targets.paceSide !== 'fasterOnly' && currentPace > targets.paceRange.max)
       : targets.paceSecPerKm !== undefined &&
         Math.abs(currentPace - targets.paceSecPerKm) > PACE_TOLERANCE_S_PER_KM);
 
@@ -121,8 +145,8 @@ export function updateAlerts(
   return {
     samples,
     currentPace,
-    pace: debounce(state.pace, paceOff, now),
-    finish: debounce(state.finish, finishOff, now),
+    pace: debounce(state.pace, paceOff, now, timing),
+    finish: debounce(state.finish, finishOff, now, timing),
   };
 }
 

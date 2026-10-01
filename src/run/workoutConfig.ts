@@ -1,15 +1,10 @@
 /**
- * Tunable numbers of plan workout runs. Pace tolerance and alert timing
- * shared with goal runs live in goalConfig.ts.
+ * Tunable numbers of plan workout runs. Every alert number (tolerance,
+ * timing, per-step grace, short steps) lives in goalConfig.ts.
  */
 
-/**
- * Off-track alerts restart at each segment and stay quiet for this long
- * and this far into it. Shorter than a goal run's start grace, so a 400 m
- * rep can still alert.
- */
-export const SEGMENT_ALERT_GRACE_S = 20;
-export const SEGMENT_ALERT_GRACE_KM = 0.05;
+/** The haptic countdown before a timed work step starts: 3, 2, 1. */
+export const WORK_COUNTDOWN_S = 3;
 
 // What GPS can measure: a phone needs several seconds and tens of meters
 // to settle on a pace or a distance.

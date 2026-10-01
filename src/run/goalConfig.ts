@@ -46,3 +46,26 @@ export const ALERT_CLEAR_S = 5;
 /** No alerts until the run has lasted this long and covered this far. */
 export const ALERT_GRACE_S = 60;
 export const ALERT_GRACE_KM = 0.2;
+
+/**
+ * Plan workout steps: alerts restart at each step and stay quiet for this
+ * long and this far into it. Shorter than a goal run's start grace, so a
+ * 400 m rep can still alert.
+ */
+export const SEGMENT_ALERT_GRACE_S = 20;
+export const SEGMENT_ALERT_GRACE_KM = 0.05;
+
+/**
+ * Steps shorter than this (estimated) are too short for the goal timing
+ * above (a 20 s window and a 10 s hold would hardly react before the rep
+ * is over), so they use the quicker numbers below.
+ */
+export const SHORT_STEP_MAX_S = 120;
+/** Short steps: pace over this much moving time... */
+export const SHORT_STEP_WINDOW_S = 8;
+/** ...off for this long before the alert shows, on track this long to clear it... */
+export const SHORT_STEP_HOLD_S = 4;
+export const SHORT_STEP_CLEAR_S = 3;
+/** ...and nothing for the first seconds and meters, while accelerating. */
+export const SHORT_STEP_GRACE_S = 10;
+export const SHORT_STEP_GRACE_KM = 0.02;

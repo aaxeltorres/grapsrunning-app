@@ -115,6 +115,25 @@ export type RepeatGroup = {
 
 export type WorkoutSegment = WorkoutStep | RepeatGroup;
 
+/** One work step (rep) as it was run, stored with the workout's result. */
+export type RepResult = {
+  /** Position of the step in the run, from 0. */
+  index: number;
+  label: string;
+  rep?: Counter;
+  set?: Counter;
+  zone?: Zone;
+  target: StepTarget;
+  /** The step's target pace range (s/km), when it had one. */
+  targetPace?: { min: number; max: number };
+  seconds: number;
+  meters: number;
+  /** Only when GPS could measure it: long enough in time and in distance. */
+  paceSecPerKm: number | null;
+  /** Reached its target, ended with Done, skipped, or cut by Finish. */
+  ended: 'completed' | 'done' | 'skipped' | 'finished';
+};
+
 /** What the runner actually did when a plan workout was run. */
 export type WorkoutResult = {
   distanceMeters: number;
@@ -125,6 +144,8 @@ export type WorkoutResult = {
   completedAt: string;
   /** When the run started (ms since epoch). */
   startedAt?: number;
+  /** Every work step, in order. Missing on runs before reps were recorded. */
+  reps?: RepResult[];
 };
 
 export type Workout = {

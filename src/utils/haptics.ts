@@ -13,6 +13,21 @@ export function mediumImpact(): void {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
 
+/** A work step (rep) starts: a firm, distinct thump. */
+export function workStartHaptic(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+}
+
+/** A rest starts: soft, so it feels different from a rep. */
+export function restStartHaptic(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
+}
+
+/** One beat of the 3, 2, 1 before a timed rep. */
+export function countdownHaptic(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+}
+
 /** Light tick as a wheel picker moves to another row (iOS only). */
 export function selectionTick(): void {
   if (Platform.OS !== 'ios') return;
