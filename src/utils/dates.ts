@@ -48,6 +48,12 @@ export function parseISODate(iso: ISODate): Date {
   return new Date(y, m - 1, d);
 }
 
+/** Whole days since 1970-01-01, so consecutive dates are consecutive numbers. */
+export function dayNumber(iso: ISODate): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
 export function todayISO(): ISODate {
   return toISODate(new Date());
 }

@@ -18,7 +18,7 @@ import {
   type Workout,
 } from '../coach/plan';
 import {
-  planDayMessages,
+  planDayMessage,
   type PlanDayMessageKey,
 } from '../coach/planOnboardingScript';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
@@ -95,7 +95,10 @@ export default function PlanOverview({
     [workoutsByDate],
   );
   const selectedWorkout = workoutFor(selectedDate);
-  const messageKey = mikeMessageKey(selectedWorkout, gentle);
+  const messageText = planDayMessage(
+    mikeMessageKey(selectedWorkout, gentle),
+    selectedDate,
+  );
 
   // Another month never contains the selection, so moving to it selects
   // its first workout (or its first day when nothing is planned there).
@@ -148,8 +151,8 @@ export default function PlanOverview({
               <View style={styles.mikeBubble}>
                 {/* Keyed by message, so a new line pops in like a chat. */}
                 <ChatBubble
-                  key={messageKey}
-                  text={planDayMessages[messageKey]}
+                  key={messageText}
+                  text={messageText}
                   sender="mike"
                   reduceMotion={reduceMotion}
                 />

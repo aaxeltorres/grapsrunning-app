@@ -1,3 +1,4 @@
+import { dayNumber, type ISODate } from '../utils/dates';
 import { isBeginnerLevel } from './runnerProfile';
 import type { ChatScriptStep } from './types';
 
@@ -333,12 +334,40 @@ export const planOnboardingScript: ChatScriptStep[] = [
 /**
  * Mike's one-liner above the selected day's workout on the Plan screen.
  * Keep them short and warm: they sit in a single chat bubble.
+ *
+ * A key with several lines is a list: `planDayMessage` picks one from the
+ * workout date. Keep each list at 5 lines (a prime number), so workouts
+ * 1 to 4 days apart never show the same line.
  */
 export const planDayMessages = {
-  easy: 'Nice and easy today. Keep it chatty and enjoy the run! 😊',
-  runWalk: 'Run a little, walk a little. Every minute counts! 👟',
-  intervals: 'Speed day! Warm up well and enjoy the fast bits. ⚡️',
-  long: 'Long run day. Settle into a relaxed pace and enjoy every kilometer. 🌄',
+  easy: [
+    'Nice and easy today. Keep it chatty and enjoy the run! 😊',
+    "Easy pace today. If you can talk, you're doing it right. 💬",
+    'Relax into this one. No watch-checking, just enjoy the road. 🌿',
+    'Slow and steady wins today. Let your legs find their rhythm. 🐢',
+    "Take it gentle out there. Easy runs build the engine! 🔋",
+  ],
+  runWalk: [
+    'Run a little, walk a little. Every minute counts! 👟',
+    "Walk breaks are part of the plan, not a failure. You've got this! 💪",
+    'Stay patient and keep it comfortable. Run, walk, repeat. 🔁',
+    "Today's win is showing up. Mix it up and enjoy it! 🌤️",
+    'Short runs, easy walks. Your body is getting stronger every day. 🌱',
+  ],
+  intervals: [
+    'Speed day! Warm up well and enjoy the fast bits. ⚡️',
+    'Time to push a little. Fast when it says fast, easy when it says easy. 🔥',
+    'Warm up properly, then let the speed come. You will feel great after! ⚡️',
+    "Hard parts are short, I promise. Recover well between them! 😅",
+    "Fast legs today! Stay smooth, don't sprint the first one. 🚀",
+  ],
+  long: [
+    'Long run day. Settle into a relaxed pace and enjoy every kilometer. 🌄',
+    "Today's the big one. Start slow, you have plenty of road ahead. 🛣️",
+    'Bring water and take your time. Distance beats speed today! 💧',
+    'Long and steady. Break it into chunks and tick them off. ✅',
+    "Easy effort, long distance. This is where the magic happens! ✨",
+  ],
   rest: 'Rest day! Recovery is when you get stronger, so put your feet up. 🛋️',
   completed: "Done and dusted. Great work, I'm proud of you! 🎉",
   skipped: "No worries about this one. We'll pick it up on the next run. 💙",
@@ -347,3 +376,13 @@ export const planDayMessages = {
 } as const;
 
 export type PlanDayMessageKey = keyof typeof planDayMessages;
+
+/**
+ * The line Mike says for a day. Lists rotate with the date, so the same
+ * workout always gets the same line and nearby days get different ones.
+ */
+export function planDayMessage(key: PlanDayMessageKey, date: ISODate): string {
+  const message = planDayMessages[key];
+  if (typeof message === 'string') return message;
+  return message[dayNumber(date) % message.length];
+}
