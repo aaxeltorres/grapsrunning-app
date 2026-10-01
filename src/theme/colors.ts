@@ -58,6 +58,9 @@ export const colors = {
   workoutEasy: '#2ECC71', // same green as the Stats accents
   workoutIntervals: '#FF8A3D', // same orange as the Stats accents
   workoutLong: '#0080FF', // same blue as the Stats accents
+  workoutAerobic: '#5AC8FA', // same cyan as segmentRecovery
+  workoutTempo: '#9B6BE0', // same purple as the Stats accents
+  workoutSpeed: '#D70015', // same red as alertRedLight
   // Plan: workout card on the Plan peach (cardPlanBg)
   planCardAccent: '#C2410C', // deep orange text on peach
   planSegmentMuted: '#FFD7B0', // warm-up / cool-down part of the segment bar

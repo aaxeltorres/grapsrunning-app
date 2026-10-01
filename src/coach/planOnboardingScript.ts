@@ -362,6 +362,21 @@ export const planDayMessages = {
     "Hard parts are short, I promise. Recover well between them! 😅",
     "Fast legs today! Stay smooth, don't sprint the first one. 🚀",
   ],
+  aerobic: [
+    'Steady aerobic work today. Strong but controlled, never all out. 🫁',
+    "A good engine-builder. Find the zone and hold it there. 🔋",
+    'Comfortably hard today. Breathe deep and stay relaxed. 🌬️',
+  ],
+  tempo: [
+    'Tempo day! Each block a little harder. Stay smooth as it builds. 📈',
+    'Work up through the zones today. Patience early pays off later. ⏱️',
+    "Steady pressure today, no sprinting. You've got this! 💪",
+  ],
+  speed: [
+    'Speed day! Short and sharp, then rest well between efforts. ⚡️',
+    'Warm up properly first. Fast legs come after a good warm-up! 🔥',
+    'Explosive efforts today. Full rest means full rest, take it! 😮‍💨',
+  ],
   long: [
     'Long run day. Settle into a relaxed pace and enjoy every kilometer. 🌄',
     "Today's the big one. Start slow, you have plenty of road ahead. 🛣️",

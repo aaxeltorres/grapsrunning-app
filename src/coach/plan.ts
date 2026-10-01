@@ -8,17 +8,81 @@
 
 import type { ISODate } from '../utils/dates';
 
+// Every field added after version 1 is optional, so old saved plans still
+// load as they are: no migration, same version.
 export const PLAN_SCHEMA_VERSION = 1;
 
-export type WorkoutType = 'easy' | 'intervals' | 'long' | 'rest';
+/**
+ * The workout's category: calendar color, legend and the "two demanding
+ * sessions in a row" rule. The specific session (Fartlek, HIIT...) is
+ * `Workout.session`.
+ */
+export type WorkoutType =
+  | 'easy'
+  | 'aerobic'
+  | 'tempo'
+  | 'long'
+  | 'intervals'
+  | 'speed'
+  | 'rest';
+
+/**
+ * The specific session. Missing on workouts from before sessions existed,
+ * and on easy runs, run/walks, long runs and classic intervals, which are
+ * named from their type and steps.
+ */
+export type SessionId =
+  | 'regenerative'
+  | 'extensiveAerobic'
+  | 'progressive'
+  | 'tempoRun'
+  | 'strides'
+  | 'fartlek'
+  | 'longIntervals'
+  | 'mixedIntervals'
+  | 'hiit'
+  | 'hiitMacro'
+  | 'sprints';
+
 /** `partial`: the run was started but cut short (finished early or skipped parts). */
 export type WorkoutStatus = 'planned' | 'completed' | 'partial' | 'skipped';
-export type StepKind = 'warmup' | 'steady' | 'work' | 'recovery' | 'cooldown';
 
-/** How long a step lasts: a distance or a duration. */
+/**
+ * - `warmup` / `cooldown`: before and after the main part.
+ * - `steady`: continuous running (an easy run, a tempo block).
+ * - `work`: an effort inside a repeat group.
+ * - `recovery`: the micro rest between reps (jog, walk or standing).
+ * - `macroRest`: the longer rest between sets of reps.
+ */
+export type StepKind =
+  | 'warmup'
+  | 'steady'
+  | 'work'
+  | 'recovery'
+  | 'macroRest'
+  | 'cooldown';
+
+/**
+ * Training zone 1 to 5, by pace for now (see `zones.ts`). There is no
+ * heart rate in the app yet.
+ */
+export type Zone = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * How a step ends: after a distance, after a duration, or when the runner
+ * taps (`manual`): "Done" on an effort, "Ready" on a rest. Manual steps
+ * cover what GPS can't measure (a 20 m sprint) and full recoveries.
+ */
 export type StepTarget =
   | { type: 'distance'; meters: number }
-  | { type: 'duration'; seconds: number };
+  | { type: 'duration'; seconds: number }
+  | {
+      type: 'manual';
+      /** For totals and the workout bar only. */
+      estimatedSeconds: number;
+      /** A label such as "20 m"; never measured. */
+      meters?: number;
+    };
 
 /** Target pace in seconds per km: one value or a range. */
 export type Pace = number | { min: number; max: number };
@@ -27,15 +91,26 @@ export type WorkoutStep = {
   id: string;
   kind: StepKind;
   target: StepTarget;
-  /** `null`: no pace target (e.g. walking or a free jog). */
+  /** `null`: no pace target (walking, a free jog, or a too-short effort). */
   pace: Pace | null;
+  /** Intensity zone, when the session is described in zones. */
+  zone?: Zone;
 };
 
-/** Steps repeated `repeat` times, e.g. 6 × (400 m fast + 90 s jog). */
+/**
+ * Steps repeated `repeat` times, e.g. 6 × (400 m fast + 90 s jog). Blocks
+ * in sequence are simply several groups one after the other.
+ *
+ * With `sets`, the whole block runs `sets` times, e.g. 2 × 8 × (20 s +
+ * 1 min); `macroRest` then replaces the micro rest after the last rep of
+ * every set but the last one.
+ */
 export type RepeatGroup = {
   id: string;
   repeat: number;
   steps: WorkoutStep[];
+  sets?: number;
+  macroRest?: WorkoutStep;
 };
 
 export type WorkoutSegment = WorkoutStep | RepeatGroup;
@@ -56,6 +131,8 @@ export type Workout = {
   id: string;
   date: ISODate;
   type: WorkoutType;
+  /** The specific session; see `SessionId`. */
+  session?: SessionId;
   status: WorkoutStatus;
   /**
    * The actual run, set when the workout is `completed` or `partial`.
@@ -106,13 +183,57 @@ export function paceMidpoint(pace: Pace): number {
   return typeof pace === 'number' ? pace : (pace.min + pace.max) / 2;
 }
 
+export type Counter = { number: number; of: number };
+
+/** A step in execution order, with where it sits in its block. */
+export type UnrolledStep = {
+  step: WorkoutStep;
+  /** Inside a repeat group: rep 3 of 8. */
+  rep: Counter | null;
+  /** Inside a group with `sets`: set 1 of 2. */
+  set: Counter | null;
+};
+
+export function isRest(step: Pick<WorkoutStep, 'kind'>) {
+  return step.kind === 'recovery' || step.kind === 'macroRest';
+}
+
+/**
+ * Every step in execution order: repeat groups unrolled, sets repeated,
+ * and the macro rest in place of the last micro rest of each set but the
+ * last. A group without `sets` unrolls exactly as before sets existed.
+ */
+export function unrollSegments(segments: WorkoutSegment[]): UnrolledStep[] {
+  const out: UnrolledStep[] = [];
+  for (const segment of segments) {
+    if (!isRepeatGroup(segment)) {
+      out.push({ step: segment, rep: null, set: null });
+      continue;
+    }
+    const sets = segment.sets ?? 1;
+    for (let s = 1; s <= sets; s += 1) {
+      const set = segment.sets !== undefined ? { number: s, of: sets } : null;
+      for (let n = 1; n <= segment.repeat; n += 1) {
+        const rep = { number: n, of: segment.repeat };
+        const macro =
+          segment.macroRest && s < sets && n === segment.repeat
+            ? segment.macroRest
+            : undefined;
+        let steps = segment.steps;
+        if (macro && steps.length > 0 && isRest(steps[steps.length - 1])) {
+          steps = steps.slice(0, -1);
+        }
+        for (const step of steps) out.push({ step, rep, set });
+        if (macro) out.push({ step: macro, rep, set });
+      }
+    }
+  }
+  return out;
+}
+
 /** Every step in execution order, with repeat groups unrolled. */
 export function flattenSteps(segments: WorkoutSegment[]): WorkoutStep[] {
-  return segments.flatMap((segment) =>
-    isRepeatGroup(segment)
-      ? Array.from({ length: segment.repeat }, () => segment.steps).flat()
-      : [segment],
-  );
+  return unrollSegments(segments).map((unrolled) => unrolled.step);
 }
 
 function stepPace(step: WorkoutStep) {
@@ -123,16 +244,25 @@ function stepPace(step: WorkoutStep) {
 
 /** Estimated step distance in meters. */
 export function stepDistance(step: WorkoutStep): number {
-  return step.target.type === 'distance'
-    ? step.target.meters
-    : (step.target.seconds / stepPace(step)) * 1000;
+  const { target } = step;
+  if (target.type === 'distance') return target.meters;
+  if (target.type === 'manual') {
+    return target.meters ?? (target.estimatedSeconds / stepPace(step)) * 1000;
+  }
+  return (target.seconds / stepPace(step)) * 1000;
 }
 
 /** Estimated step duration in seconds. */
 export function stepDuration(step: WorkoutStep): number {
-  return step.target.type === 'duration'
-    ? step.target.seconds
-    : (step.target.meters / 1000) * stepPace(step);
+  const { target } = step;
+  if (target.type === 'duration') return target.seconds;
+  if (target.type === 'manual') return target.estimatedSeconds;
+  return (target.meters / 1000) * stepPace(step);
+}
+
+/** What ends a manual step: "Done" on an effort, "Ready" on a rest. */
+export function manualEndLabel(step: Pick<WorkoutStep, 'kind'>): 'done' | 'ready' {
+  return isRest(step) ? 'ready' : 'done';
 }
 
 /** Total distance in meters (estimated for time-based steps). */
@@ -166,9 +296,9 @@ export function formatDurationShort(seconds: number): string {
 }
 
 function formatTarget(target: StepTarget) {
-  return target.type === 'distance'
-    ? formatDistanceShort(target.meters)
-    : formatDurationShort(target.seconds);
+  if (target.type === 'distance') return formatDistanceShort(target.meters);
+  if (target.type === 'duration') return formatDurationShort(target.seconds);
+  return target.meters !== undefined ? formatDistanceShort(target.meters) : 'Open';
 }
 
 /** The main repeat group of a workout, if any. */
@@ -183,8 +313,25 @@ export function isRunWalk(workout: Pick<Workout, 'type' | 'segments'>) {
   return workout.type === 'easy' && mainRepeatGroup(workout) !== undefined;
 }
 
-/** Short name, e.g. "6 × 400 m", "Easy run", "Run/walk". */
-export function displayName(workout: Pick<Workout, 'type' | 'segments'>) {
+export const SESSION_NAMES: Record<SessionId, string> = {
+  regenerative: 'Regenerative',
+  extensiveAerobic: 'Extensive aerobic',
+  progressive: 'Progressive',
+  tempoRun: 'Tempo run',
+  strides: 'Strides',
+  fartlek: 'Fartlek',
+  longIntervals: 'Long intervals',
+  mixedIntervals: 'Mixed intervals',
+  hiit: 'HIIT',
+  hiitMacro: 'HIIT sets',
+  sprints: 'Sprints',
+};
+
+type Named = Pick<Workout, 'type' | 'segments' | 'session'>;
+
+/** Short name, e.g. "Fartlek", "6 × 400 m", "Easy run", "Run/walk". */
+export function displayName(workout: Named) {
+  if (workout.session) return SESSION_NAMES[workout.session];
   switch (workout.type) {
     case 'rest':
       return 'Rest day';
@@ -199,6 +346,12 @@ export function displayName(workout: Pick<Workout, 'type' | 'segments'>) {
         ? `${group.repeat} × ${formatTarget(work.target)}`
         : 'Intervals';
     }
+    case 'aerobic':
+      return 'Aerobic run';
+    case 'tempo':
+      return 'Tempo run';
+    case 'speed':
+      return 'Speed';
   }
 }
 
@@ -207,13 +360,76 @@ export function typeLabel(type: WorkoutType) {
   switch (type) {
     case 'easy':
       return 'Easy';
+    case 'aerobic':
+      return 'Aerobic';
+    case 'tempo':
+      return 'Tempo';
     case 'intervals':
       return 'Intervals';
+    case 'speed':
+      return 'Speed';
     case 'long':
       return 'Long run';
     case 'rest':
       return 'Rest';
   }
+}
+
+/**
+ * Hard sessions: never two on consecutive days. Aerobic runs don't count,
+ * but the generator still keeps them off the days next to a hard one.
+ */
+export function isDemandingType(type: WorkoutType) {
+  return (
+    type === 'long' || type === 'intervals' || type === 'tempo' || type === 'speed'
+  );
+}
+
+/** Coach notation: 15'', 1'30'', 15'. */
+function formatCoachDuration(seconds: number) {
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m === 0) return `${s}''`;
+  return s === 0 ? `${m}'` : `${m}'${s.toString().padStart(2, '0')}''`;
+}
+
+function structureStep(step: WorkoutStep) {
+  const { target } = step;
+  const meters = target.type === 'duration' ? undefined : target.meters;
+  const amount =
+    target.type === 'duration'
+      ? formatCoachDuration(target.seconds)
+      : meters !== undefined
+        ? formatDistanceShort(meters)
+        : null;
+  if (amount === null) return isRest(step) ? 'full rest' : 'until done';
+  return step.zone ? `${amount} Z${step.zone}` : amount;
+}
+
+/**
+ * The session in coach notation, e.g. "5' Z2 + 8 × (1'30'' Z4 / 2'30''
+ * Z2)". Only for sessions (`session` set); `null` for other workouts,
+ * whose cards stay as they were.
+ */
+export function structureLine(workout: Pick<Workout, 'segments' | 'session'>) {
+  if (!workout.session) return null;
+  return workout.segments
+    .map((segment) => {
+      if (!isRepeatGroup(segment)) return structureStep(segment);
+      const reps = `${segment.repeat} × (${segment.steps.map(structureStep).join(' / ')})`;
+      if (!segment.sets || segment.sets < 2) return reps;
+      const macro = segment.macroRest
+        ? `, ${structureStep(segment.macroRest)} between sets`
+        : '';
+      return `${segment.sets} sets of ${reps}${macro}`;
+    })
+    .join(' + ');
+}
+
+/** Whether any step of the workout is described in zones. */
+export function hasZones(workout: Pick<Workout, 'segments'>) {
+  return flattenSteps(workout.segments).some((step) => step.zone !== undefined);
 }
 
 /**
@@ -223,7 +439,7 @@ export function typeLabel(type: WorkoutType) {
 export function keyPace(workout: Pick<Workout, 'segments'>): Pace | null {
   let best: Pace | null = null;
   for (const step of flattenSteps(workout.segments)) {
-    if (step.pace === null || step.kind === 'recovery') continue;
+    if (step.pace === null || isRest(step)) continue;
     if (best === null || paceMidpoint(step.pace) < paceMidpoint(best)) {
       best = step.pace;
     }
@@ -242,9 +458,7 @@ export type SegmentBarPart = {
  * Warm-up / main / cool-down split of a workout by duration, for the
  * proportional segment bar.
  */
-export function segmentBarParts(
-  workout: Pick<Workout, 'type' | 'segments'>,
-): SegmentBarPart[] {
+export function segmentBarParts(workout: Named): SegmentBarPart[] {
   const total = totalDuration(workout);
   if (total <= 0) return [];
 
@@ -261,8 +475,9 @@ export function segmentBarParts(
   }
 
   const group = mainRepeatGroup(workout);
-  const mainLabel =
-    workout.type === 'intervals' && group
+  const mainLabel = workout.session
+    ? displayName(workout)
+    : workout.type === 'intervals' && group
       ? `${group.repeat} fast reps`
       : isRunWalk(workout) && group
         ? `${group.repeat} × run/walk`

@@ -27,8 +27,11 @@ export const WORKOUT_TYPE_COLORS: Record<
   string
 > = {
   easy: colors.workoutEasy,
-  intervals: colors.workoutIntervals,
+  aerobic: colors.workoutAerobic,
+  tempo: colors.workoutTempo,
   long: colors.workoutLong,
+  intervals: colors.workoutIntervals,
+  speed: colors.workoutSpeed,
 };
 
 /** "5.0 km" */

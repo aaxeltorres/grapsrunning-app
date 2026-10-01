@@ -10,3 +10,11 @@
  */
 export const SEGMENT_ALERT_GRACE_S = 20;
 export const SEGMENT_ALERT_GRACE_KM = 0.05;
+
+// What GPS can measure: a phone needs several seconds and tens of meters
+// to settle on a pace or a distance.
+
+/** Shorter efforts are countdowns with no pace target (no pace alert). */
+export const MIN_PACED_EFFORT_S = 30;
+/** Shorter sprints aren't measured: they are manual steps ended with "Done". */
+export const MIN_MEASURED_DISTANCE_M = 100;
