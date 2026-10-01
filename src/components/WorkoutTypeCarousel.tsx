@@ -8,7 +8,8 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
-import type { EditorKind } from '../coach/workoutEditor';
+import { SESSION_NAMES, type SessionId } from '../coach/plan';
+import { workoutType, type EditorKind } from '../coach/workoutEditor';
 import { colors, radius, spacing, typography } from '../theme';
 import { selectionTick } from '../utils/haptics';
 import { WORKOUT_TYPE_COLORS } from './WorkoutCard';
@@ -37,13 +38,37 @@ const CARDS: Record<EditorKind, CardInfo> = {
   runWalk: { emoji: '🚶', label: 'Run/walk', hint: 'Mix it up' },
   long: { emoji: '🛣️', label: 'Long run', hint: 'Go the distance' },
   intervals: { emoji: '⚡️', label: 'Intervals', hint: 'Fast reps' },
+  ...sessionCards({
+    regenerative: ['💙', 'Recovery jog'],
+    extensiveAerobic: ['🫁', 'Steady Z3'],
+    progressive: ['📈', 'Build the zones'],
+    tempoRun: ['⏱️', 'Z3 then Z4'],
+    strides: ['🌬️', 'Short and quick'],
+    fartlek: ['🎈', 'Speed play'],
+    mixedIntervals: ['🔁', '2-min efforts'],
+    longIntervals: ['🧗', '3-min efforts'],
+    hiit: ['🔥', 'Short bursts'],
+    hiitMacro: ['💥', 'Bursts in sets'],
+    sprints: ['🏃', 'Full rests'],
+  }),
 };
 
-/** Intervals and long runs have their own color; run/walk is an easy day. */
+/** Session cards use the session's own name, as on the workout card. */
+function sessionCards(
+  cards: Record<SessionId, [emoji: string, hint: string]>,
+): Record<SessionId, CardInfo> {
+  const out = {} as Record<SessionId, CardInfo>;
+  for (const id of Object.keys(cards) as SessionId[]) {
+    const [emoji, hint] = cards[id];
+    out[id] = { emoji, label: SESSION_NAMES[id], hint };
+  }
+  return out;
+}
+
+/** The card takes its category's color; run/walk is an easy day. */
 function colorFor(kind: EditorKind) {
-  return WORKOUT_TYPE_COLORS[
-    kind === 'long' ? 'long' : kind === 'intervals' ? 'intervals' : 'easy'
-  ];
+  const type = workoutType(kind);
+  return WORKOUT_TYPE_COLORS[type === 'rest' ? 'easy' : type];
 }
 
 type Props = {
@@ -299,6 +324,9 @@ const Card = React.memo(function Card({
       <Text style={styles.emoji}>{info.emoji}</Text>
       <Animated.Text
         numberOfLines={1}
+        // Session names such as "Extensive aerobic" shrink to fit the card.
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
         style={[
           typography.headline,
           { color: pos.interpolate(mix(colors.textPrimary, colors.white)) },

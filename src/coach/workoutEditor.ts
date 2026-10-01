@@ -21,32 +21,60 @@ import {
   round5,
   rulesFor,
   runWalkBoutSeconds,
+  sessionSegments,
   stepFactory,
   WALK_BREAK_SECONDS,
   type Rules,
 } from './generatePlan';
 import {
+  flattenSteps,
+  isDemandingType,
   isRepeatGroup,
+  isRest,
   keyPace,
   totalDistance,
   totalDuration,
   type Pace,
   type Plan,
+  type SessionId,
   type Workout,
   type WorkoutSegment,
   type WorkoutType,
+  type Zone,
 } from './plan';
 import type { LevelId, RunnerProfile } from './runnerProfile';
+import { buildSession, isSessionId, SESSION_SPECS } from './sessions';
 
-/** The run types of the editor's carousel. */
-export type EditorKind = 'easy' | 'runWalk' | 'long' | 'intervals';
+/** The run types the editor had before sessions; edited as before. */
+type BasicKind = 'easy' | 'runWalk' | 'long' | 'intervals';
+
+/**
+ * The run types of the editor's carousel: the basic ones and every
+ * session. A session is edited by its total time; its reps, sets and
+ * zones stay as the session defines them.
+ */
+export type EditorKind = BasicKind | SessionId;
 
 export const EDITOR_KINDS: readonly EditorKind[] = [
   'easy',
+  'regenerative',
   'runWalk',
   'long',
+  'extensiveAerobic',
+  'progressive',
+  'tempoRun',
   'intervals',
+  'strides',
+  'fartlek',
+  'mixedIntervals',
+  'longIntervals',
+  'hiit',
+  'hiitMacro',
+  'sprints',
 ];
+
+const sessionOf = (kind: EditorKind): SessionId | null =>
+  isSessionId(kind) ? kind : null;
 
 /** Plans are built week by week: week 0 is the first (see `generatePlan`). */
 const LAST_WEEK = 3;
@@ -62,8 +90,8 @@ const MIN_REPS = 2;
 /** Beginners' run/walk bouts follow this level's table, for everyone. */
 const RUN_WALK_FALLBACK_LEVEL: LevelId = 'run_walk';
 
-/** Total time limits in minutes, by type. */
-const MINUTES_RANGE: Record<EditorKind, { min: number; max: number }> = {
+/** Total time limits in minutes, by type (sessions: see `SESSION_SPECS`). */
+const MINUTES_RANGE: Record<BasicKind, { min: number; max: number }> = {
   easy: { min: 15, max: 90 },
   runWalk: { min: 10, max: 60 },
   long: { min: 40, max: 180 },
@@ -118,35 +146,46 @@ export function editorContext(
 }
 
 export function workoutType(kind: EditorKind): WorkoutType {
+  const session = sessionOf(kind);
+  if (session) return SESSION_SPECS[session].category;
   return kind === 'long' ? 'long' : kind === 'intervals' ? 'intervals' : 'easy';
 }
 
 export function workoutKind(
-  workout: Pick<Workout, 'type' | 'segments'>,
+  workout: Pick<Workout, 'type' | 'segments' | 'session'>,
 ): EditorKind {
+  if (workout.session) return workout.session;
   if (workout.type === 'intervals') return 'intervals';
   if (workout.type === 'long') return 'long';
   return workout.segments.some(isRepeatGroup) ? 'runWalk' : 'easy';
 }
 
 /**
- * The types offered in the carousel. Intervals only for runners who opted
- * in, but never taken away from a workout that already is one.
+ * The types offered in the carousel, by the same rules as the generator:
+ * intervals and speed sessions only for runners who opted in, advanced
+ * sessions from the 5K level up, and no structured session for beginners
+ * or while an injury hurts. The workout's own type is never taken away.
  */
 export function availableKinds(
   profile: RunnerProfile,
   current: EditorKind,
 ): EditorKind[] {
-  return EDITOR_KINDS.filter(
-    (kind) =>
-      kind !== 'intervals' ||
-      profile.includeIntervals === true ||
-      current === 'intervals',
-  );
+  const rules = rulesFor(profile);
+  return EDITOR_KINDS.filter((kind) => {
+    if (kind === current) return true;
+    if (kind === 'intervals') return profile.includeIntervals === true;
+    const session = sessionOf(kind);
+    if (!session) return true;
+    const spec = SESSION_SPECS[session];
+    if (!rules.structured) return false;
+    if (spec.speedWork && !rules.intervals) return false;
+    return !spec.advanced || rules.advanced;
+  });
 }
 
 /** Whether the run is edited by repetitions rather than by minutes. */
 export function isRepKind(kind: EditorKind, ctx: EditorContext) {
+  if (sessionOf(kind)) return false;
   return (
     kind === 'runWalk' ||
     kind === 'intervals' ||
@@ -214,7 +253,13 @@ function mainMinutesForTotal(totalMinutes: number) {
 }
 
 export function amountLimits(kind: EditorKind, ctx: EditorContext): AmountLimits {
-  const { min, max } = MINUTES_RANGE[kind];
+  const session = sessionOf(kind);
+  if (session) {
+    // Sessions: the amount is the total time in minutes.
+    const spec = SESSION_SPECS[session];
+    return { min: spec.minMinutes, max: spec.maxMinutes, step: 1 };
+  }
+  const { min, max } = MINUTES_RANGE[kind as BasicKind];
   if (!isRepKind(kind, ctx)) {
     // Smallest and largest main block that keep the total within range.
     // Long runs are long: 5-minute steps keep the handle easy to place.
@@ -237,11 +282,41 @@ export function amountLimits(kind: EditorKind, ctx: EditorContext): AmountLimits
   return { min: minReps, max: maxReps, step: 1 };
 }
 
+/** A session's own warm-up / main / cool-down, from its built steps. */
+function sessionLayout(session: SessionId, amount: number, ctx: EditorContext): Layout {
+  const steps = flattenSteps(sessionDraftSegments('layout', session, amount, ctx));
+  const seconds = steps.map((step) => totalDuration({ segments: [step] }));
+  const total = seconds.reduce((sum, s) => sum + s, 0);
+  let warm = 0;
+  for (let i = 0; i < steps.length && steps[i].kind === 'warmup'; i += 1) warm += seconds[i];
+  let cool = 0;
+  for (let i = steps.length - 1; i >= 0 && steps[i].kind === 'cooldown'; i -= 1) cool += seconds[i];
+  return {
+    warmSeconds: warm,
+    mainSeconds: total - warm - cool,
+    coolSeconds: cool,
+    totalSeconds: total,
+  };
+}
+
+function sessionDraftSegments(
+  workoutId: string,
+  session: SessionId,
+  amount: number,
+  ctx: EditorContext,
+): WorkoutSegment[] {
+  return buildSession(workoutId, session, ctx.rules.easyPace, {
+    totalSeconds: amount * 60,
+  });
+}
+
 export function layoutFor(
   kind: EditorKind,
   amount: number,
   ctx: EditorContext,
 ): Layout {
+  const session = sessionOf(kind);
+  if (session) return sessionLayout(session, amount, ctx);
   if (!isRepKind(kind, ctx)) {
     const warm = warmCoolMinutes(amount) * 60;
     const main = amount * 60;
@@ -307,8 +382,13 @@ export function amountForMainEnd(
 /** A sensible starting amount when the user switches to a type. */
 export function defaultDraft(kind: EditorKind, ctx: EditorContext): Draft {
   const { rules, week } = ctx;
+  const session = sessionOf(kind);
   let amount: number;
-  if (kind === 'intervals') {
+  if (session) {
+    // What the generator would build for this week.
+    const segments = sessionSegments('default', session, rules, week);
+    amount = Math.round(totalDuration({ segments }) / 60);
+  } else if (kind === 'intervals') {
     amount = defaultIntervalReps(rules.level, week);
   } else if (isRepKind(kind, ctx)) {
     amount = DEFAULT_RUN_WALK_REPS - (rules.gentle ? 2 : 0);
@@ -322,10 +402,16 @@ export function defaultDraft(kind: EditorKind, ctx: EditorContext): Draft {
 
 /** The draft that describes a saved workout. */
 export function draftFromWorkout(
-  workout: Pick<Workout, 'type' | 'segments'>,
+  workout: Pick<Workout, 'type' | 'segments' | 'session'>,
   ctx: EditorContext,
 ): Draft {
   const kind = workoutKind(workout);
+  if (sessionOf(kind)) {
+    return {
+      kind,
+      amount: clampAmount(kind, Math.round(totalDuration(workout) / 60), ctx),
+    };
+  }
   if (isRepKind(kind, ctx)) {
     const group = workout.segments.find(isRepeatGroup);
     return {
@@ -354,6 +440,8 @@ export function segmentsFor(
   ctx: EditorContext,
 ): WorkoutSegment[] {
   const { kind, amount } = draft;
+  const session = sessionOf(kind);
+  if (session) return sessionDraftSegments(workoutId, session, amount, ctx);
   const { rules } = ctx;
   const { step, repeat } = stepFactory(workoutId);
   const easy = paceRange(rules.easyPace, 10, 20);
@@ -397,9 +485,13 @@ export function editedWorkout(
   draft: Draft,
   ctx: EditorContext,
 ): Workout {
+  // A basic type has no session: drop the one the workout may have had.
+  const { session: _previous, ...rest } = workout;
+  const session = sessionOf(draft.kind);
   return {
-    ...workout,
+    ...rest,
     type: workoutType(draft.kind),
+    ...(session ? { session } : {}),
     edited: true,
     segments: segmentsFor(workout.id, draft, ctx),
   };
@@ -410,7 +502,23 @@ export type RunStats = {
   meters: number;
   /** Fastest target pace, or `null` when nothing is paced. */
   pace: Pace | null;
+  /**
+   * The hardest zone of a session's efforts, or `null` without zones.
+   * Shown instead of a pace when its hardest efforts are too short to be
+   * paced (HIIT, strides, sprints).
+   */
+  topZone: Zone | null;
 };
+
+/** The hardest zone among the efforts (rests left out). */
+export function topZone(workout: Pick<Workout, 'segments'>): Zone | null {
+  let top: Zone | null = null;
+  for (const step of flattenSteps(workout.segments)) {
+    if (step.zone === undefined || isRest(step)) continue;
+    if (top === null || step.zone > top) top = step.zone;
+  }
+  return top;
+}
 
 /** Live numbers for the summary, from the draft's own steps and paces. */
 export function draftStats(
@@ -423,6 +531,7 @@ export function draftStats(
     seconds: totalDuration(workout),
     meters: totalDistance(workout),
     pace: keyPace(workout),
+    topZone: topZone(workout),
   };
 }
 
@@ -436,13 +545,12 @@ export function amountFraction(
   return max === min ? 0 : (amount - min) / (max - min);
 }
 
-function isDemanding(type: WorkoutType) {
-  return type === 'long' || type === 'intervals';
-}
+const isDemanding = isDemandingType;
 
 /**
- * True when a demanding session (long run, intervals) on `date` would sit
- * right next to another one. Only a soft warning: saving stays allowed.
+ * True when a demanding session (long run, intervals, speed, tempo) on
+ * `date` would sit right next to another one. Only a soft warning: saving
+ * stays allowed.
  */
 export function nextToHardSession(
   plan: Plan,

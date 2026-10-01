@@ -433,6 +433,61 @@ export const editorMessages: Record<EditorKind, [string, string, string]> = {
     'A solid set of intervals. Warm up well first! 🔥',
     "Lots of reps! Stay smooth and don't burn out early. 🚀",
   ],
+  regenerative: [
+    'A short recovery jog. Easy legs, easy mind. 🌿',
+    'A gentle regenerative run. Slower than you think! 🐢',
+    'A long, very easy run. Keep it truly relaxed. 💙',
+  ],
+  extensiveAerobic: [
+    'A compact aerobic run. Steady and controlled. 🫁',
+    'A solid aerobic session. Find the zone and hold it. 🔋',
+    'A big aerobic block! Stay patient, never all out. 🌄',
+  ],
+  progressive: [
+    'A short progression. Start easy and build. 📈',
+    'A proper progressive run. Patience early pays off later! ⏱️',
+    'A long build-up! Save something for the last zone. 🚀',
+  ],
+  tempoRun: [
+    'A short tempo. Comfortably hard, nothing more. ⏱️',
+    'A classic tempo run. Smooth pressure all the way. 💪',
+    'A long tempo! Settle in and keep it even. 🔥',
+  ],
+  strides: [
+    'A short session with strides. Quick and snappy! ⚡️',
+    'Easy running plus strides. Rest fully between them. 😮‍💨',
+    'Lots of easy time before the strides. Keep them relaxed and fast! 🌬️',
+  ],
+  fartlek: [
+    'A short fartlek. Play with the pace! 🎈',
+    'A classic fartlek. Push the fast bits, float the easy ones. 🔁',
+    'A long fartlek warm-up first. Then have fun with it! 🚀',
+  ],
+  mixedIntervals: [
+    'A quick interval session. Warm up well first! 🔥',
+    'A solid mix of efforts. Smooth, not frantic. 💪',
+    'A longer session around the reps. Stay patient! ⏱️',
+  ],
+  longIntervals: [
+    'Long reps, short extras. Pace them evenly! ⏱️',
+    'A big interval session. The first reps should feel easy. 💪',
+    'Long intervals with a long warm-up. Bring your focus! 🔥',
+  ],
+  hiit: [
+    'A short HIIT. Explosive and over quickly! ⚡️',
+    'Sharp efforts with good rests. Go hard when it says hard. 🔥',
+    'Plenty of warm-up before the HIIT. Your legs will thank you! 🚀',
+  ],
+  hiitMacro: [
+    'Two sets of short bursts. Use the long rest! ⚡️',
+    'HIIT in sets. Recover fully between them. 😮‍💨',
+    'A long warm-up before the sets. Then go sharp! 🔥',
+  ],
+  sprints: [
+    'Short sprints, full rests. Quality over quantity! 🏃',
+    'Sprint, rest fully, repeat. Tap Ready when you are. ⚡️',
+    'Sprints plus a long easy finish. Enjoy the cool-down! 🌿',
+  ],
 };
 
 /** Mike's line for a run type and where its length sits (0 to 1). */

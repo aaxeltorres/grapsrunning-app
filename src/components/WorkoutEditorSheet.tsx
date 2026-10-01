@@ -260,6 +260,7 @@ function EditorContent({
           meters={stats.meters}
           pace={stats.pace}
           fastPace={draft.kind === 'intervals'}
+          topZone={stats.topZone}
           reduceMotion={reduceMotion}
         />
 
@@ -284,11 +285,13 @@ type SummaryProps = {
   meters: number;
   pace: ReturnType<typeof draftStats>['pace'];
   fastPace: boolean;
+  /** Sessions show their hardest zone instead of a pace. */
+  topZone: ReturnType<typeof draftStats>['topZone'];
   reduceMotion: boolean;
 };
 
 /** Total time, distance and pace: big numbers that glide as you drag. */
-function Summary({ seconds, meters, pace, fastPace, reduceMotion }: SummaryProps) {
+function Summary({ seconds, meters, pace, fastPace, topZone, reduceMotion }: SummaryProps) {
   const time = useAnimatedNumber(seconds, reduceMotion);
   const km = useAnimatedNumber(meters, reduceMotion);
   const paceMin = useAnimatedNumber(
@@ -301,7 +304,9 @@ function Summary({ seconds, meters, pace, fastPace, reduceMotion }: SummaryProps
   );
 
   const paceText =
-    pace === null
+    topZone !== null
+      ? `Z${topZone}`
+      : pace === null
       ? '–'
       : typeof pace === 'number'
         ? formatPaceSeconds(Math.round(paceMin))
@@ -313,7 +318,9 @@ function Summary({ seconds, meters, pace, fastPace, reduceMotion }: SummaryProps
     <View
       style={styles.summary}
       accessible
-      accessibilityLabel={`Total time ${formatMinutes(seconds)}, distance ${formatKm(meters)}, pace ${paceText} per kilometer`}
+      accessibilityLabel={`Total time ${formatMinutes(seconds)}, distance ${formatKm(meters)}, ${
+        topZone !== null ? `top zone ${topZone}` : `pace ${paceText} per kilometer`
+      }`}
     >
       <View>
         <Text style={[typography.subheadline, styles.summaryLabel]}>
@@ -337,7 +344,7 @@ function Summary({ seconds, meters, pace, fastPace, reduceMotion }: SummaryProps
             {paceText}
           </Text>
           <Text style={[typography.subheadline, styles.summaryLabel]}>
-            {fastPace ? 'fast pace /km' : 'pace /km'}
+            {topZone !== null ? 'top zone' : fastPace ? 'fast pace /km' : 'pace /km'}
           </Text>
         </View>
       </View>
