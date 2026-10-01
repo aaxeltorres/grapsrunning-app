@@ -4,23 +4,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import {
+  EMPTY_GOAL_SETUP,
   GOAL_LABELS,
   GOAL_METRICS,
+  clearGoalMetric,
   deriveGoal,
-  formatGoalValue,
+  formatSetupValue,
+  goalFixes,
   goalLimits,
   goalValue,
+  setGoalMetric,
   validateGoal,
-  withGoalValue,
+  type GoalFix,
   type GoalIssue,
   type GoalMetric,
-  type RunGoal,
+  type GoalSetup,
 } from '../run/goals';
 import { lightImpact } from '../utils/haptics';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { colors, radius, spacing, typography } from '../theme';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
+import Chip from '../components/Chip';
 import GoalPickerSheet from '../components/GoalPickerSheet';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GoalSetup'>;
@@ -33,63 +38,71 @@ const DERIVED_HINTS: Record<GoalMetric, string> = {
 };
 
 /** One short line per blocking problem. */
-function issueText(issue: GoalIssue, goal: RunGoal): string | null {
+function issueText(issue: GoalIssue): string | null {
   switch (issue.kind) {
     case 'empty':
       return null; // the disabled Start button says enough
     case 'outOfRange': {
       const { min, max } = goalLimits(issue.metric);
-      return `${GOAL_LABELS[issue.metric]} must be between ${formatGoalValue(
+      return `${GOAL_LABELS[issue.metric]} must be between ${formatSetupValue(
         issue.metric,
         min,
-      )} and ${formatGoalValue(issue.metric, max)}.`;
+      )} and ${formatSetupValue(issue.metric, max)}.`;
     }
     case 'impossible': {
       const { min, max } = goalLimits(issue.metric);
-      if (issue.metric === 'pace') {
-        return issue.tooHigh
-          ? `That needs a pace slower than ${formatGoalValue('pace', max)}.`
-          : `That needs a pace faster than ${formatGoalValue('pace', min)}.`;
+      const need = formatSetupValue(issue.metric, issue.value);
+      const limit = formatSetupValue(issue.metric, issue.tooHigh ? max : min);
+      switch (issue.metric) {
+        case 'pace':
+          return `That would need ${need}, ${
+            issue.tooHigh ? 'slower' : 'faster'
+          } than the ${limit} limit.`;
+        case 'time':
+          return `That would take ${need}, ${
+            issue.tooHigh ? 'longer' : 'shorter'
+          } than the ${limit} limit.`;
+        case 'distance':
+          return `That would be ${need}, ${
+            issue.tooHigh ? 'farther' : 'shorter'
+          } than the ${limit} limit.`;
       }
-      const limit = formatGoalValue(issue.metric, issue.tooHigh ? max : min);
-      return `That works out to ${issue.tooHigh ? 'more' : 'less'} than ${limit}.`;
     }
-    case 'mismatch':
-      return `${formatGoalValue('distance', goal.distanceMeters!)} at ${formatGoalValue(
-        'pace',
-        goal.paceSecPerKm!,
-      )} takes ${formatGoalValue('time', issue.expectedTime)}, not ${formatGoalValue(
-        'time',
-        goal.durationSeconds!,
-      )}.`;
   }
 }
 
 /**
- * Goal run setup: distance, time and pace, each optional. Two goals show
- * the third they imply; three that don't agree block the start.
+ * Goal run setup: distance, time and pace. Set any two and the third is
+ * worked out; setting a third makes the one set least recently the
+ * derived one. A derived value outside the allowed range blocks the start
+ * and comes with fixes that are valid.
  */
 export default function GoalSetupScreen({ navigation }: Props) {
   const reduceMotion = useReduceMotion();
-  const [goal, setGoal] = useState<RunGoal>({});
+  const [setup, setSetup] = useState<GoalSetup>(EMPTY_GOAL_SETUP);
   const [editing, setEditing] = useState<GoalMetric | null>(null);
 
+  const { goal } = setup;
   const derived = deriveGoal(goal);
   const issues = validateGoal(goal);
+  const fixes = goalFixes(goal);
   const messages = issues
-    .map((issue) => issueText(issue, goal))
+    .map(issueText)
     .filter((text): text is string => text !== null);
-  const mismatch = issues.find((issue) => issue.kind === 'mismatch');
+  const derivedOff = issues.some((issue) => issue.kind === 'impossible');
 
   const handleSet = (metric: GoalMetric, value: number) => {
-    setGoal((current) => withGoalValue(current, metric, value));
+    setSetup((current) => setGoalMetric(current, metric, value));
     setEditing(null);
   };
 
   const handleClear = (metric: GoalMetric) => {
-    setGoal((current) => withGoalValue(current, metric, undefined));
+    setSetup((current) => clearGoalMetric(current, metric));
     setEditing(null);
   };
+
+  const handleFix = (fix: GoalFix) =>
+    setSetup((current) => setGoalMetric(current, fix.metric, fix.value));
 
   const handleStart = () => {
     lightImpact();
@@ -111,7 +124,7 @@ export default function GoalSetupScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <Text style={[typography.body, styles.intro]}>
-          Set any goal you like. Leave the rest empty.
+          Set any two and the third is worked out for you.
         </Text>
 
         {GOAL_METRICS.map((metric) => {
@@ -138,11 +151,17 @@ export default function GoalSetupScreen({ navigation }: Props) {
                 </Text>
                 {value !== undefined ? (
                   <Text style={[typography.largeTitle, styles.cardValue]}>
-                    {formatGoalValue(metric, value)}
+                    {formatSetupValue(metric, value)}
                   </Text>
                 ) : isDerived ? (
-                  <Text style={[typography.title2, styles.cardDerived]}>
-                    {`≈ ${formatGoalValue(metric, derived.value)} `}
+                  <Text
+                    style={[
+                      typography.title2,
+                      styles.cardDerived,
+                      derivedOff && styles.cardDerivedOff,
+                    ]}
+                  >
+                    {`≈ ${formatSetupValue(metric, derived.value)} `}
                     <Text style={typography.subheadline}>{DERIVED_HINTS[metric]}</Text>
                   </Text>
                 ) : (
@@ -163,15 +182,17 @@ export default function GoalSetupScreen({ navigation }: Props) {
                 {text}
               </Text>
             ))}
-            {mismatch?.kind === 'mismatch' && (
-              <Button
-                label={`Use ${formatGoalValue('pace', mismatch.fixPace)}`}
-                variant="outline"
-                onPress={() =>
-                  setGoal((current) => withGoalValue(current, 'pace', mismatch.fixPace))
-                }
-                style={styles.fixButton}
-              />
+            {fixes.length > 0 && (
+              <View style={styles.fixes}>
+                {fixes.map((fix) => (
+                  <Chip
+                    key={fix.metric}
+                    label={`Use ${formatSetupValue(fix.metric, fix.value)}`}
+                    accessibilityLabel={`Set ${GOAL_LABELS[fix.metric].toLowerCase()} to ${formatSetupValue(fix.metric, fix.value)}`}
+                    onPress={() => handleFix(fix)}
+                  />
+                ))}
+              </View>
             )}
           </View>
         )}
@@ -189,6 +210,7 @@ export default function GoalSetupScreen({ navigation }: Props) {
       <GoalPickerSheet
         metric={editing}
         initialValue={sheetValue}
+        canClear={editing !== null && goalValue(goal, editing) !== undefined}
         onSet={handleSet}
         onClear={handleClear}
         onDismiss={() => setEditing(null)}
@@ -241,6 +263,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontVariant: ['tabular-nums'],
   },
+  cardDerivedOff: {
+    color: colors.alertRedLight,
+  },
   cardEmpty: {
     color: colors.textMuted,
   },
@@ -253,8 +278,10 @@ const styles = StyleSheet.create({
   issueText: {
     color: colors.alertRedLight,
   },
-  fixButton: {
-    alignSelf: 'flex-start',
+  fixes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   footer: {
     paddingHorizontal: spacing.lg,

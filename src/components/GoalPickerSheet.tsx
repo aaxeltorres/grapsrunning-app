@@ -1,45 +1,54 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   GOAL_LABELS,
   formatGoalValue,
   goalLimits,
+  goalStep,
   type GoalMetric,
 } from '../run/goals';
-import { GOAL_DISTANCE_PRESETS } from '../run/goalConfig';
-import { lightImpact } from '../utils/haptics';
-import { colors, radius, spacing, typography } from '../theme';
+import {
+  GOAL_DISTANCE_MAX_M,
+  GOAL_DISTANCE_PRESETS,
+  GOAL_PACE_MAX_S_PER_KM,
+  GOAL_PACE_MIN_S_PER_KM,
+  GOAL_PACE_STEP_S,
+  GOAL_TIME_MAX_S,
+} from '../run/goalConfig';
+import { colors, spacing, typography } from '../theme';
 import BottomSheet from './BottomSheet';
 import Button from './Button';
+import Chip from './Chip';
 import WheelPicker, { type WheelItem } from './WheelPicker';
 
 const range = (from: number, to: number, step = 1) =>
   Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
 
-const KM_ITEMS: WheelItem<number>[] = range(0, 100).map((n) => ({
-  value: n,
-  label: String(n),
-}));
+// Wheel rows come from the goal limits and steps, so the wheels and the
+// validation can never disagree about what is allowed.
+const KM_ITEMS: WheelItem<number>[] = range(0, Math.floor(GOAL_DISTANCE_MAX_M / 1000)).map(
+  (n) => ({ value: n, label: String(n) }),
+);
 const TENTH_ITEMS: WheelItem<number>[] = range(0, 9).map((n) => ({
   value: n,
   label: `.${n} km`,
 }));
-const HOUR_ITEMS: WheelItem<number>[] = range(0, 10).map((n) => ({
-  value: n,
-  label: `${n} h`,
-}));
+const HOUR_ITEMS: WheelItem<number>[] = range(0, Math.floor(GOAL_TIME_MAX_S / 3600)).map(
+  (n) => ({ value: n, label: `${n} h` }),
+);
 const MINUTE_ITEMS: WheelItem<number>[] = range(0, 59).map((n) => ({
   value: n,
   label: `${n} min`,
 }));
-const PACE_MINUTE_ITEMS: WheelItem<number>[] = range(2, 15).map((n) => ({
-  value: n,
-  label: String(n),
-}));
-const PACE_SECOND_ITEMS: WheelItem<number>[] = range(0, 55, 5).map((n) => ({
-  value: n,
-  label: `:${n.toString().padStart(2, '0')} /km`,
-}));
+const PACE_MIN_MINUTES = Math.floor(GOAL_PACE_MIN_S_PER_KM / 60);
+const PACE_MAX_MINUTES = Math.floor(GOAL_PACE_MAX_S_PER_KM / 60);
+const PACE_MINUTE_ITEMS: WheelItem<number>[] = range(
+  PACE_MIN_MINUTES,
+  PACE_MAX_MINUTES,
+).map((n) => ({ value: n, label: String(n) }));
+const PACE_SECOND_ITEMS: WheelItem<number>[] = range(0, 60 - GOAL_PACE_STEP_S, GOAL_PACE_STEP_S).map(
+  (n) => ({ value: n, label: `:${n.toString().padStart(2, '0')} /km` }),
+);
 
 /** Starting point of a goal that isn't set yet. */
 const DEFAULT_VALUES: Record<GoalMetric, number> = {
@@ -50,9 +59,9 @@ const DEFAULT_VALUES: Record<GoalMetric, number> = {
 
 /** Wheels show whole steps; snap a value onto them. */
 function snap(metric: GoalMetric, value: number) {
-  if (metric === 'pace') return Math.round(value / 5) * 5;
-  if (metric === 'time') return Math.round(value / 60) * 60;
-  return value; // distance keeps exact presets such as the half marathon
+  if (metric === 'distance') return value; // keeps exact presets such as the half marathon
+  const step = goalStep(metric);
+  return Math.round(value / step) * step;
 }
 
 type Props = {
@@ -60,6 +69,8 @@ type Props = {
   metric: GoalMetric | null;
   /** The current goal, or a suggestion (e.g. the derived value). */
   initialValue?: number;
+  /** False for a derived value: it isn't set, so there is nothing to clear. */
+  canClear?: boolean;
   onSet: (metric: GoalMetric, value: number) => void;
   onClear: (metric: GoalMetric) => void;
   onDismiss: () => void;
@@ -70,6 +81,7 @@ type Props = {
 export default function GoalPickerSheet({
   metric,
   initialValue,
+  canClear = true,
   onSet,
   onClear,
   onDismiss,
@@ -86,7 +98,10 @@ export default function GoalPickerSheet({
     setOpenedFor(metric);
     if (metric) {
       setShown(metric);
-      setDraft(snap(metric, initialValue ?? DEFAULT_VALUES[metric]));
+      // A suggestion can be out of range (a derived 18:00 /km): open on the limit.
+      const { min, max } = goalLimits(metric);
+      const start = snap(metric, initialValue ?? DEFAULT_VALUES[metric]);
+      setDraft(Math.min(max, Math.max(min, start)));
     }
   }
 
@@ -108,35 +123,14 @@ export default function GoalPickerSheet({
 
       {shown === 'distance' && (
         <View style={styles.presets}>
-          {GOAL_DISTANCE_PRESETS.map((preset) => {
-            const selected = draft === preset.meters;
-            return (
-              <Pressable
-                key={preset.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => {
-                  lightImpact();
-                  setDraft(preset.meters);
-                }}
-                style={({ pressed }) => [
-                  styles.chip,
-                  selected && styles.chipSelected,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    typography.subheadline,
-                    styles.chipLabel,
-                    selected && styles.chipLabelSelected,
-                  ]}
-                >
-                  {preset.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {GOAL_DISTANCE_PRESETS.map((preset) => (
+            <Chip
+              key={preset.id}
+              label={preset.label}
+              selected={draft === preset.meters}
+              onPress={() => setDraft(preset.meters)}
+            />
+          ))}
         </View>
       )}
 
@@ -152,6 +146,7 @@ export default function GoalPickerSheet({
         <Button
           label="Clear"
           variant="secondary"
+          disabled={!canClear}
           onPress={() => onClear(shown)}
           style={styles.action}
         />
@@ -236,8 +231,11 @@ function PaceWheels({
   seconds: number;
   onChange: (seconds: number) => void;
 }) {
-  const minutes = Math.min(15, Math.max(2, Math.floor(seconds / 60)));
-  const secs = Math.round((seconds % 60) / 5) * 5 % 60;
+  const minutes = Math.min(
+    PACE_MAX_MINUTES,
+    Math.max(PACE_MIN_MINUTES, Math.floor(seconds / 60)),
+  );
+  const secs = (Math.round((seconds % 60) / GOAL_PACE_STEP_S) * GOAL_PACE_STEP_S) % 60;
   return (
     <>
       <View style={styles.wheel}>
@@ -274,25 +272,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginBottom: spacing.md,
-  },
-  chip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceGray,
-  },
-  chipSelected: {
-    backgroundColor: colors.iosBlue,
-  },
-  chipLabel: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  chipLabelSelected: {
-    color: colors.white,
-  },
-  pressed: {
-    opacity: 0.85,
   },
   wheels: {
     flexDirection: 'row',

@@ -16,11 +16,12 @@ export const GOAL_PACE_MIN_S_PER_KM = 2 * 60 + 30;
 export const GOAL_PACE_MAX_S_PER_KM = 15 * 60;
 
 /**
- * When distance, time and pace are all set, they agree if distance × pace
- * is within this many seconds, or this share of the time, of the time goal.
+ * Steps of the setup wheels. Suggested fixes are rounded to them, so a
+ * suggestion is always a value the wheel can show.
  */
-export const GOAL_MISMATCH_TOLERANCE_S = 15;
-export const GOAL_MISMATCH_TOLERANCE_RATIO = 0.02;
+export const GOAL_DISTANCE_STEP_M = 100;
+export const GOAL_TIME_STEP_S = 60;
+export const GOAL_PACE_STEP_S = 5;
 
 export type DistancePreset = { id: string; label: string; meters: number };
 

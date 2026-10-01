@@ -7,12 +7,13 @@
 import {
   GOAL_DISTANCE_MAX_M,
   GOAL_DISTANCE_MIN_M,
-  GOAL_MISMATCH_TOLERANCE_RATIO,
-  GOAL_MISMATCH_TOLERANCE_S,
+  GOAL_DISTANCE_STEP_M,
   GOAL_PACE_MAX_S_PER_KM,
   GOAL_PACE_MIN_S_PER_KM,
+  GOAL_PACE_STEP_S,
   GOAL_TIME_MAX_S,
   GOAL_TIME_MIN_S,
+  GOAL_TIME_STEP_S,
   PACE_TOLERANCE_S_PER_KM,
 } from './goalConfig';
 import { formatClock, formatPaceSeconds } from '../utils/format';
@@ -54,6 +55,40 @@ export function setGoalMetrics(goal: RunGoal): GoalMetric[] {
   return GOAL_METRICS.filter((m) => goalValue(goal, m) !== undefined);
 }
 
+/**
+ * The setup screen's state: at most two goals the user controls. `order`
+ * lists them from least to most recently set; with two set, the third is
+ * derived from them.
+ */
+export type GoalSetup = { goal: RunGoal; order: GoalMetric[] };
+
+export const EMPTY_GOAL_SETUP: GoalSetup = { goal: {}, order: [] };
+
+/**
+ * Sets a goal (also a derived one). When that makes three, the one set
+ * least recently stops being a goal and becomes the derived value.
+ */
+export function setGoalMetric(
+  setup: GoalSetup,
+  metric: GoalMetric,
+  value: number,
+): GoalSetup {
+  const order = [...setup.order.filter((m) => m !== metric), metric];
+  let goal = withGoalValue(setup.goal, metric, value);
+  while (order.length > 2) {
+    goal = withGoalValue(goal, order.shift()!, undefined);
+  }
+  return { goal, order };
+}
+
+/** Empties a goal. Clearing one that isn't set changes nothing. */
+export function clearGoalMetric(setup: GoalSetup, metric: GoalMetric): GoalSetup {
+  return {
+    goal: withGoalValue(setup.goal, metric, undefined),
+    order: setup.order.filter((m) => m !== metric),
+  };
+}
+
 /** The value of a metric computed from the two others. */
 function computeMetric(goal: RunGoal, metric: GoalMetric): number | undefined {
   const { distanceMeters: d, durationSeconds: t, paceSecPerKm: p } = goal;
@@ -93,22 +128,30 @@ export function goalLimits(metric: GoalMetric) {
   return LIMITS[metric];
 }
 
+/** Wheel step of each goal, in meters, seconds and seconds per km. */
+const STEPS: Record<GoalMetric, number> = {
+  distance: GOAL_DISTANCE_STEP_M,
+  time: GOAL_TIME_STEP_S,
+  pace: GOAL_PACE_STEP_S,
+};
+
+export function goalStep(metric: GoalMetric) {
+  return STEPS[metric];
+}
+
 export type GoalIssue =
   | { kind: 'empty' }
   /** A goal the user set is outside the allowed range. */
   | { kind: 'outOfRange'; metric: GoalMetric; tooHigh: boolean }
-  /** Two goals imply an impossible third (e.g. a 1:30 /km pace). */
-  | { kind: 'impossible'; metric: GoalMetric; value: number; tooHigh: boolean }
-  /**
-   * All three are set and don't agree. `expectedTime` is distance × pace;
-   * `fixPace` is the pace that makes them agree.
-   */
-  | { kind: 'mismatch'; expectedTime: number; fixPace: number };
+  /** The two goals imply a third outside the allowed range (e.g. 18:00 /km). */
+  | { kind: 'impossible'; metric: GoalMetric; value: number; tooHigh: boolean };
 
+/** Compared as shown (whole seconds / meters), so 15:00.0000001 is fine. */
 function rangeCheck(metric: GoalMetric, value: number) {
   const { min, max } = LIMITS[metric];
-  if (value < min) return { tooHigh: false };
-  if (value > max) return { tooHigh: true };
+  const shown = Math.round(value);
+  if (shown < min) return { tooHigh: false };
+  if (shown > max) return { tooHigh: true };
   return null;
 }
 
@@ -129,20 +172,48 @@ export function validateGoal(goal: RunGoal): GoalIssue[] {
     const off = rangeCheck(derived.metric, derived.value);
     if (off) issues.push({ kind: 'impossible', ...derived, ...off });
   }
-
-  if (set.length === 3) {
-    const time = goal.durationSeconds!;
-    const expectedTime = computeMetric(goal, 'time')!;
-    const tolerance = Math.max(
-      GOAL_MISMATCH_TOLERANCE_S,
-      time * GOAL_MISMATCH_TOLERANCE_RATIO,
-    );
-    if (Math.abs(expectedTime - time) > tolerance) {
-      const fixPace = computeMetric({ ...goal, paceSecPerKm: undefined }, 'pace')!;
-      issues.push({ kind: 'mismatch', expectedTime, fixPace });
-    }
-  }
   return issues;
+}
+
+/** A one-tap fix: this goal takes this value and the setup becomes valid. */
+export type GoalFix = { metric: GoalMetric; value: number };
+
+/**
+ * When the derived value is out of range: the changes to one of the two
+ * set goals that put it back inside, as close to the current goal as
+ * possible. A fix is only offered if it is itself inside its range, on the
+ * wheel's step, and leaves the whole setup valid.
+ */
+export function goalFixes(goal: RunGoal): GoalFix[] {
+  const derived = deriveGoal(goal);
+  if (!derived) return [];
+  const off = rangeCheck(derived.metric, derived.value);
+  if (!off) return [];
+
+  const limits = LIMITS[derived.metric];
+  const edge = off.tooHigh ? limits.max : limits.min;
+  const set = setGoalMetrics(goal);
+  const fixes: GoalFix[] = [];
+
+  for (const metric of set) {
+    const keep = set.find((m) => m !== metric)!;
+    const atEdge = withGoalValue(
+      withGoalValue({}, derived.metric, edge),
+      keep,
+      goalValue(goal, keep),
+    );
+    const exact = computeMetric(atEdge, metric);
+    if (exact === undefined) continue;
+
+    // Round both ways; the epsilon keeps an exact step from slipping a step.
+    const step = STEPS[metric];
+    const down = Math.floor(exact / step + 1e-9) * step;
+    const candidates = [down, down + step]
+      .filter((value) => validateGoal(withGoalValue(goal, metric, value)).length === 0)
+      .sort((a, b) => Math.abs(a - exact) - Math.abs(b - exact));
+    if (candidates.length > 0) fixes.push({ metric, value: candidates[0] });
+  }
+  return fixes;
 }
 
 /** The goal the run ends on: distance if set, then time. Pace alone has none. */
@@ -241,6 +312,17 @@ export const GOAL_LABELS: Record<GoalMetric, string> = {
 /** "5 km", "21.1 km" */
 export function formatGoalDistance(meters: number): string {
   return `${Number((meters / 1000).toFixed(1))} km`;
+}
+
+/**
+ * Like `formatGoalValue`, but a pace is never replaced by the "--:--"
+ * placeholder, so the setup can say "18:00 /km" or "1:00 /km" for a
+ * value the app rejects.
+ */
+export function formatSetupValue(metric: GoalMetric, value: number): string {
+  if (metric !== 'pace') return formatGoalValue(metric, value);
+  const total = Math.round(value);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} /km`;
 }
 
 /** A goal value with its unit: "5 km", "45:00", "5:30 /km". */
