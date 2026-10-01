@@ -138,6 +138,32 @@ function SheetContent({
         : 'Select all that apply';
   }
 
+  const input = (
+    <>
+      {question.type === 'choice' && (
+        <ChoiceInput
+          question={question}
+          value={typeof draft === 'string' ? draft : undefined}
+          onChange={setDraft}
+        />
+      )}
+      {question.type === 'multiChoice' && (
+        <MultiChoiceInput
+          question={question}
+          value={Array.isArray(draft) ? draft : []}
+          onChange={setDraft}
+        />
+      )}
+      {question.type === 'number' && (
+        <NumberInput
+          question={question}
+          value={typeof draft === 'number' ? draft : question.defaultValue}
+          onChange={setDraft}
+        />
+      )}
+    </>
+  );
+
   return (
     <View>
       <View style={styles.header}>
@@ -151,35 +177,26 @@ function SheetContent({
         )}
       </View>
 
-      <ScrollView
-        style={[styles.input, { maxHeight: inputMaxHeight }]}
-        alwaysBounceVertical={false}
-        showsVerticalScrollIndicator={false}
-      >
-        {question.type === 'choice' && (
-          <ChoiceInput
-            question={question}
-            value={typeof draft === 'string' ? draft : undefined}
-            onChange={setDraft}
-          />
-        )}
-        {question.type === 'multiChoice' && (
-          <MultiChoiceInput
-            question={question}
-            value={Array.isArray(draft) ? draft : []}
-            onChange={setDraft}
-          />
-        )}
-        {question.type === 'number' && (
-          <NumberInput
-            question={question}
-            value={typeof draft === 'number' ? draft : question.defaultValue}
-            onChange={setDraft}
-          />
-        )}
-      </ScrollView>
+      {question.input === 'wheel' ? (
+        // Fixed height: never inside the scroll view, so the wheel is the
+        // only thing that scrolls under the finger or mouse wheel.
+        <View style={styles.input}>{input}</View>
+      ) : (
+        <ScrollView
+          style={[styles.input, { maxHeight: inputMaxHeight }]}
+          alwaysBounceVertical={false}
+          showsVerticalScrollIndicator={false}
+        >
+          {input}
+        </ScrollView>
+      )}
 
-      <Button label="Done" onPress={handleDone} disabled={!canSubmit} />
+      <Button
+        label="Done"
+        variant="accent"
+        onPress={handleDone}
+        disabled={!canSubmit}
+      />
     </View>
   );
 }
