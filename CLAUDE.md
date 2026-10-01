@@ -11,8 +11,8 @@ A running app in the style of Nike Run Club / Adidas Running / Strava, with a vi
 - Follows up when the user misses a training day.
 - Generates a personalized training routine, shown in the Plan section.
 
-Implemented today: fake auth/sign-in, Home dashboard, Stats, GPS run tracking (background location), Run results with route map, the Plan onboarding (Mike's scripted first-visit chat that builds the runner profile) and the Plan screen (Week / Month views of a 4-week plan).
-Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. Plans are mock data from `generatePlan`; there is no workout editor, and Active Run doesn't execute workout segments yet.
+Implemented today: fake auth/sign-in, Home dashboard, Stats, GPS run tracking (background location), Run results with route map, the Plan onboarding (Mike's scripted first-visit chat that builds the runner profile) the Plan screen (Week / Month views of a 4-week plan), the Your profile screen (change the onboarding answers, then update the plan) and the workout editor (change a planned workout's type and duration).
+Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. Plans are mock data from `generatePlan`; the workout editor can't move a workout to another day or add one on a rest day yet, and Active Run doesn't execute workout segments yet.
 
 ## Commands
 - Install: `npm install`
@@ -33,7 +33,8 @@ Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. P
   - `runnerProfile.ts`: the `RunnerProfile` model. Stores stable option ids and metric values, never display labels.
   - `plan.ts`: the `Plan` / `Workout` model (dated workouts made of steps and repeat groups; meters, seconds, seconds per km) and pure helpers (`totalDistance`, `totalDuration`, `displayName`...). Plain JSON, so an AI can produce it.
   - `generatePlan.ts`: `generatePlan(profile)` returns a deterministic rule-based mock plan; the AI integration goes here.
-  - Mike's Plan screen one-liners (`planDayMessages`) also live in `planOnboardingScript.ts`.
+  - `workoutEditor.ts`: pure logic of the workout editor (run types, limits, warm-up / main / cool-down layout, the workout built from a draft, the hard-session warning). Built on the generator's rules and paces.
+  - Mike's Plan screen one-liners (`planDayMessages`) and his workout editor lines (`editorMessages`) also live in `planOnboardingScript.ts`.
   - Scripted chats are not connected to the AI chatbot, and every answer is a predefined option (no free text).
 - `src/storage`: persistence behind small modules with get / save / clear, backed by AsyncStorage for now. `profileStorage` keeps the runner profile, `planStorage` the training plan. Each is the only file to change when that data moves to a real database.
 - `src/tasks`: background tasks
