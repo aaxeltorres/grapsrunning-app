@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import type { RunViewProps } from '../run/types';
 import {
@@ -15,19 +15,15 @@ import {
 import { PACE_TOLERANCE_S_PER_KM } from '../run/goalConfig';
 import { useGoalAlerts } from '../hooks/useGoalAlerts';
 import { useReduceMotion } from '../hooks/useReduceMotion';
-import { colors, motion, radius, spacing, typography } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 import { formatClock } from '../utils/format';
+import AlertBlock from './AlertBlock';
 import BasicRunView from './BasicRunView';
 import Button from './Button';
 
 const BAR_HEIGHT = 8;
 /** The pace gauge spans the target pace plus or minus this, in s/km. */
 const GAUGE_SPAN_S = 45;
-const PULSE_MS = 700;
-const PULSE_MIN = 0.08;
-const PULSE_MAX = 0.22;
-const PULSE_STATIC = 0.14;
-const ALERT_FADE_MS = 200;
 
 type Themed = Animated.AnimatedInterpolation<string | number>;
 
@@ -135,7 +131,7 @@ function GoalRun({
       </Animated.Text>
 
       <View style={styles.metrics}>
-        <AlertBlock alert={isAlert(primary)} reduceMotion={reduceMotion} theme={theme}>
+        <AlertBlock alert={isAlert(primary)} reduceMotion={reduceMotion} red={theme.red}>
           <View style={styles.primaryValueRow}>
             <Animated.Text
               numberOfLines={1}
@@ -164,7 +160,7 @@ function GoalRun({
             key={metric}
             alert={isAlert(metric)}
             reduceMotion={reduceMotion}
-            theme={theme}
+            red={theme.red}
           >
             <View style={styles.secondaryRow}>
               <Animated.Text style={[typography.subheadline, { color: theme.secondary }]}>
@@ -239,60 +235,6 @@ function GoalRun({
 }
 
 type Theme = { text: Themed; secondary: Themed; red: Themed; track: Themed };
-
-/**
- * A metric's block. While `alert` is on, a red tint pulses softly behind
- * it (steady with Reduce Motion), and fades out when it clears.
- */
-function AlertBlock({
-  alert,
-  reduceMotion,
-  theme,
-  children,
-}: {
-  alert: boolean;
-  reduceMotion: boolean;
-  theme: Theme;
-  children: React.ReactNode;
-}) {
-  const tint = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const timing = (toValue: number, duration: number) =>
-      Animated.timing(tint, {
-        toValue,
-        duration,
-        easing: motion.easeStandard,
-        useNativeDriver: true,
-      });
-
-    const animation = !alert
-      ? timing(0, ALERT_FADE_MS)
-      : reduceMotion
-        ? timing(PULSE_STATIC, ALERT_FADE_MS)
-        : Animated.loop(
-            Animated.sequence([
-              timing(PULSE_MAX, PULSE_MS),
-              timing(PULSE_MIN, PULSE_MS),
-            ]),
-          );
-    animation.start();
-    return () => animation.stop();
-  }, [alert, reduceMotion, tint]);
-
-  return (
-    <View style={styles.block}>
-      {/* Native-driven opacity outside, theme-driven color inside. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { opacity: tint }]}
-      >
-        <Animated.View style={[styles.tint, { backgroundColor: theme.red }]} />
-      </Animated.View>
-      {children}
-    </View>
-  );
-}
 
 function GoalBar({
   progress,
@@ -411,16 +353,6 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
     gap: spacing.md,
-  },
-  block: {
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.xs,
-    overflow: 'hidden',
-  },
-  tint: {
-    flex: 1,
   },
   primaryValueRow: {
     flexDirection: 'row',

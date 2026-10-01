@@ -31,3 +31,4 @@ export { default as GoalPickerSheet } from './GoalPickerSheet';
 export { default as GoalResultsSection } from './GoalResultsSection';
 export { default as RunRouteCard } from './RunRouteCard';
 export { default as RunSplits } from './RunSplits';
+export { default as AlertBlock } from './AlertBlock';
