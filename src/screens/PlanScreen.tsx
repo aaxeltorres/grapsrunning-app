@@ -94,9 +94,9 @@ export default function PlanScreen({ navigation }: Props) {
     [plan, savePlan],
   );
 
-  // No structured execution yet: every workout starts a free run.
+  // Runs the workout as stored, so edits are what gets executed.
   const handleStartWorkout = useCallback(
-    () => navigation.navigate('ActiveRun'),
+    (workout: Workout) => navigation.navigate('ActiveRun', { mode: 'plan', workout }),
     [navigation],
   );
 

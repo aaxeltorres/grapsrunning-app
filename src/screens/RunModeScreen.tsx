@@ -45,16 +45,15 @@ const MESSAGE_KEY: Record<TodayRunState['kind'], RunModeMessageKey> = {
 
 /**
  * Run mode selector, opened from "Start run" on Home. Quick start begins a
- * run, Set a goal opens the goal setup; Today's workout is not built yet
- * and shows a "Coming soon" sheet.
+ * run, Set a goal opens the goal setup, and Today's workout runs the plan's
+ * workout for today (the same flow as Start workout on the Plan). Without
+ * a workout waiting, a sheet explains why and offers a quick run.
  */
 export default function RunModeScreen({ navigation }: Props) {
   const reduceMotion = useReduceMotion();
   const [today] = useState(todayISO);
   const [state, setState] = useState<TodayRunState>({ kind: 'none' });
-  // `soonMode` outlives the sheet, so its text stays during the exit animation.
-  const [soonMode, setSoonMode] = useState<RunModeId>('plan');
-  const [soonVisible, setSoonVisible] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(false);
   const enterStyle = useEntranceAnimation({
     animate: true,
     reduceMotion,
@@ -76,19 +75,26 @@ export default function RunModeScreen({ navigation }: Props) {
     }, [today]),
   );
 
+  // Replace, so a run flows back to Home through the results.
+  const startQuickRun = () => navigation.replace('ActiveRun', { mode: 'quick' });
+  const startWorkout = (workout: Workout) =>
+    navigation.replace('ActiveRun', { mode: 'plan', workout });
+
   const handleSelect = (mode: RunModeId) => {
     lightImpact();
     if (mode === 'quick') {
-      // Replace, so the run flows back to Home through the results.
-      navigation.replace('ActiveRun', { mode: 'quick' });
+      startQuickRun();
       return;
     }
     if (mode === 'goal') {
       navigation.navigate('GoalSetup');
       return;
     }
-    setSoonMode(mode);
-    setSoonVisible(true);
+    if (state.kind === 'planned') {
+      startWorkout(state.workout);
+      return;
+    }
+    setSheetVisible(true);
   };
 
   const planCard = <PlanModeCard state={state} onPress={() => handleSelect('plan')} />;
@@ -123,19 +129,74 @@ export default function RunModeScreen({ navigation }: Props) {
       </ScrollView>
 
       <BottomSheet
-        visible={soonVisible}
-        onDismiss={() => setSoonVisible(false)}
+        visible={sheetVisible}
+        onDismiss={() => setSheetVisible(false)}
         reduceMotion={reduceMotion}
       >
-        <Text style={[typography.title2, styles.soonTitle]}>
-          {RUN_MODES[soonMode].name}
-        </Text>
-        <Text style={[typography.body, styles.soonBody]}>
-          Coming soon. For now, Quick start is the way to run.
-        </Text>
-        <Button label="OK" onPress={() => setSoonVisible(false)} />
+        <NoWorkoutSheet
+          state={state}
+          onRunAgain={(workout) => {
+            setSheetVisible(false);
+            startWorkout(workout);
+          }}
+          onQuickStart={() => {
+            setSheetVisible(false);
+            startQuickRun();
+          }}
+          onClose={() => setSheetVisible(false)}
+        />
       </BottomSheet>
     </SafeAreaView>
+  );
+}
+
+/** Why Today's workout can't start a planned workout, and what to do instead. */
+function NoWorkoutSheet({
+  state,
+  onRunAgain,
+  onQuickStart,
+  onClose,
+}: {
+  state: TodayRunState;
+  onRunAgain: (workout: Workout) => void;
+  onQuickStart: () => void;
+  onClose: () => void;
+}) {
+  if (state.kind === 'completed') {
+    return (
+      <>
+        <Text style={[typography.title2, styles.sheetTitle]}>Already done today</Text>
+        <Text style={[typography.body, styles.sheetBody]}>
+          {`You finished ${displayName(state.workout)} today. Run it again, or enjoy the rest.`}
+        </Text>
+        <View style={styles.sheetActions}>
+          <Button label="Run it again" variant="accent" onPress={() => onRunAgain(state.workout)} />
+          <Button label="Not now" variant="secondary" onPress={onClose} />
+        </View>
+      </>
+    );
+  }
+
+  const isRest = state.kind === 'rest';
+  const next = state.kind === 'rest' || state.kind === 'none' ? state.next : undefined;
+  return (
+    <>
+      <Text style={[typography.title2, styles.sheetTitle]}>
+        {isRest ? 'Rest day' : 'No workout today'}
+      </Text>
+      <Text style={[typography.body, styles.sheetBody]}>
+        {isRest
+          ? 'Nothing planned today: rest is part of the training. Feel like moving anyway? Go for a free run.'
+          : 'Your plan has no workout for today. You can still go for a free run.'}
+      </Text>
+      {next && (
+        <Text style={[typography.subheadline, styles.sheetNext]}>{nextLine(next)}</Text>
+      )}
+      <View style={styles.sheetActions}>
+        <Button label="Quick start" variant="accent" onPress={onQuickStart} />
+        <Button label="Not now" variant="secondary" onPress={onClose} />
+      </View>
+    </>
   );
 }
 
@@ -377,12 +438,21 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
-  soonTitle: {
+  sheetTitle: {
     color: colors.textPrimary,
     marginBottom: spacing.xxs,
   },
-  soonBody: {
+  sheetBody: {
     color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  sheetNext: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  sheetActions: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
 });
