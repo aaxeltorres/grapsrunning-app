@@ -36,6 +36,7 @@ export { default as RunSplits } from './RunSplits';
 export { default as AlertBlock } from './AlertBlock';
 export { default as WorkoutProgressBar } from './WorkoutProgressBar';
 export { default as ZoneGuideSheet } from './ZoneGuideSheet';
+export { default as IntensitySheet } from './IntensitySheet';
 export { default as RepResultsSection } from './RepResultsSection';
 export { default as ZoneTimeline } from './ZoneTimeline';
 export { default as IntervalBlockCard } from './IntervalBlockCard';

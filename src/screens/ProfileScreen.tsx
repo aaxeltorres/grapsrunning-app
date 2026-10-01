@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -31,7 +31,6 @@ import {
 import {
   planAnswersChanged,
   planLengthChanged,
-  type IntensityById,
   type QuestionId,
   type RunnerProfile,
 } from '../coach/runnerProfile';
@@ -41,8 +40,8 @@ import AnswerSheet from '../components/AnswerSheet';
 import BottomSheet from '../components/BottomSheet';
 import Button from '../components/Button';
 import ChatBubble from '../components/ChatBubble';
+import IntensitySheet, { INTENSITY_LABELS } from '../components/IntensitySheet';
 import MikeAvatar from '../components/MikeAvatar';
-import OptionTile from '../components/OptionTile';
 import TopBar from '../components/TopBar';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { planStorage } from '../storage/planStorage';
@@ -54,11 +53,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 type LeaveAction = Parameters<Props['navigation']['dispatch']>[0];
 
 const UNANSWERED_LABEL = 'Not answered';
-
-const INTENSITY_LABELS: Record<IntensityById, string> = {
-  pace: 'Pace',
-  heartRate: 'Heart rate',
-};
 
 type SheetState = {
   questionId: QuestionId | null;
@@ -306,11 +300,9 @@ export default function ProfileScreen({ navigation }: Props) {
   // "Intensity by": a setting, saved right away. It never makes the plan
   // out of date, so leaving afterwards doesn't offer a plan update.
   const [intensityVisible, setIntensityVisible] = useState(false);
-  const [heartRateTapped, setHeartRateTapped] = useState(false);
 
   const openIntensity = () => {
     if (sheet.active) return;
-    setHeartRateTapped(false);
     setIntensityVisible(true);
   };
 
@@ -326,12 +318,6 @@ export default function ProfileScreen({ navigation }: Props) {
         .catch((error) => console.warn('Failed to save runner profile', error));
     }
     setIntensityVisible(false);
-  };
-
-  // Heart rate isn't available yet: say so and keep pace.
-  const chooseHeartRate = () => {
-    lightImpact();
-    setHeartRateTapped(true);
   };
 
   const rows = useMemo(
@@ -429,38 +415,12 @@ export default function ProfileScreen({ navigation }: Props) {
         reduceMotion={reduceMotion}
       />
 
-      <BottomSheet
+      <IntensitySheet
         visible={intensityVisible}
+        onChoosePace={choosePace}
         onDismiss={() => setIntensityVisible(false)}
-        dragAnywhere
         reduceMotion={reduceMotion}
-      >
-        <View style={styles.syncHeader}>
-          <Text style={[typography.title2, styles.syncTitle]}>Intensity by</Text>
-          <Text style={[typography.subheadline, styles.syncBody]}>
-            How your training zones are measured.
-          </Text>
-        </View>
-        <View style={styles.options}>
-          <OptionTile label="Pace" role="radio" selected onPress={choosePace} />
-          <OptionTile
-            label="Heart rate"
-            role="radio"
-            selected={false}
-            onPress={chooseHeartRate}
-          />
-        </View>
-        {heartRateTapped && (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[typography.subheadline, styles.comingSoon]}
-          >
-            Coming soon. Heart rate zones need a heart rate sensor, so your zones
-            stay on pace for now.
-          </Text>
-        )}
-        <Button label="Done" variant="secondary" onPress={choosePace} />
-      </BottomSheet>
+      />
 
       <BottomSheet
         visible={syncVisible}
@@ -590,13 +550,5 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textSecondary,
     fontWeight: '600',
-  },
-  options: {
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  comingSoon: {
-    color: colors.planCardAccent,
-    marginBottom: spacing.md,
   },
 });

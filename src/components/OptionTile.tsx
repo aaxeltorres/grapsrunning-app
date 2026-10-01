@@ -16,6 +16,10 @@ type Props = {
   /** 'square': centered label (day tiles). 'row': label left, check right. */
   variant?: 'square' | 'row';
   style?: ViewStyle;
+  /** Dims the tile and blocks the press (an option that isn't available). */
+  disabled?: boolean;
+  /** Overrides the spoken label, e.g. to say why a tile is disabled. */
+  accessibilityLabel?: string;
 };
 
 /**
@@ -29,6 +33,8 @@ export default function OptionTile({
   role,
   variant = 'row',
   style,
+  disabled = false,
+  accessibilityLabel,
 }: Props) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -44,12 +50,13 @@ export default function OptionTile({
   return (
     <Pressable
       accessibilityRole={role}
-      accessibilityState={{ checked: selected }}
-      accessibilityLabel={label}
+      accessibilityState={{ checked: selected, disabled }}
+      accessibilityLabel={accessibilityLabel ?? label}
+      disabled={disabled}
       onPress={onPress}
       onPressIn={() => springTo(PRESSED_SCALE)}
       onPressOut={() => springTo(1)}
-      style={style}
+      style={[style, disabled && styles.disabled]}
     >
       <Animated.View
         style={[
@@ -107,6 +114,9 @@ const styles = StyleSheet.create({
   },
   selected: {
     backgroundColor: colors.iosGreen,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   label: {
     color: colors.textPrimary,

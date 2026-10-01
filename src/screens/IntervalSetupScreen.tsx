@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { rulesFor } from '../coach/generatePlan';
-import { createEmptyProfile } from '../coach/runnerProfile';
+import { createEmptyProfile, type IntensityById } from '../coach/runnerProfile';
 import {
   INTERVAL_PRESETS,
   buildIntervalWorkout,
@@ -27,7 +27,9 @@ import { useReduceMotion } from '../hooks/useReduceMotion';
 import { colors, radius, spacing, typography } from '../theme';
 import TopBar from '../components/TopBar';
 import Button from '../components/Button';
+import AnswerRow from '../components/AnswerRow';
 import Chip from '../components/Chip';
+import IntensitySheet, { INTENSITY_LABELS } from '../components/IntensitySheet';
 import IntervalBlockCard, { ValueRow } from '../components/IntervalBlockCard';
 import IntervalPickerSheet, {
   type IntervalPickerKind,
@@ -61,6 +63,8 @@ export default function IntervalSetupScreen({ navigation }: Props) {
   const [easyPace, setEasyPace] = useState(() => rulesFor(createEmptyProfile()).easyPace);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [guideVisible, setGuideVisible] = useState(false);
+  const [intensityVisible, setIntensityVisible] = useState(false);
+  const [intensityBy, setIntensityBy] = useState<IntensityById>('pace');
   // The saved setup must not overwrite what the runner already changed.
   const touched = useRef(false);
 
@@ -75,7 +79,9 @@ export default function IntervalSetupScreen({ navigation }: Props) {
     profileStorage
       .get()
       .then((profile) => {
-        if (active) setEasyPace(rulesFor(profile).easyPace);
+        if (!active) return;
+        setEasyPace(rulesFor(profile).easyPace);
+        setIntensityBy(profile.intensityBy ?? 'pace');
       })
       .catch(() => {});
     return () => {
@@ -213,11 +219,19 @@ export default function IntervalSetupScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <View style={styles.zoneHint}>
-          <Text style={[typography.subheadline, styles.secondary, styles.zoneHintText]}>
-            Zones are set by pace for now. Heart rate is coming soon.
-          </Text>
+        <View style={styles.zoneGroup}>
+          <View style={styles.list}>
+            <AnswerRow
+              label="Intensity by"
+              value={INTENSITY_LABELS[intensityBy]}
+              onPress={() => {
+                lightImpact();
+                setIntensityVisible(true);
+              }}
+            />
+          </View>
           <Pressable
+            style={styles.guideLink}
             accessibilityRole="button"
             accessibilityLabel="Open the zone guide"
             hitSlop={8}
@@ -303,6 +317,15 @@ export default function IntervalSetupScreen({ navigation }: Props) {
         onDismiss={() => setEditing(null)}
         reduceMotion={reduceMotion}
       />
+      <IntensitySheet
+        visible={intensityVisible}
+        onChoosePace={() => {
+          lightImpact();
+          setIntensityVisible(false);
+        }}
+        onDismiss={() => setIntensityVisible(false)}
+        reduceMotion={reduceMotion}
+      />
       <ZoneGuideSheet
         visible={guideVisible}
         easyPace={easyPace}
@@ -382,14 +405,20 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
-  zoneHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+  zoneGroup: {
+    gap: spacing.xs,
   },
-  zoneHintText: {
-    flex: 1,
+  list: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xxs,
+  },
+  guideLink: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.xxs,
   },
   link: {
     color: colors.iosBlue,
