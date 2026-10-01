@@ -86,7 +86,10 @@ type Props = {
   onSaveWorkout: (workout: Workout) => void;
 };
 
-/** The training plan: Week and Month views of the user's workouts. */
+/**
+ * The training plan: Week and Month views of the user's workouts. A
+ * weekly plan only has the week view, as it holds one week at a time.
+ */
 export default function PlanOverview({
   plan,
   profile,
@@ -100,7 +103,9 @@ export default function PlanOverview({
   onSaveWorkout,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const [view, setView] = useState<PlanView>('week');
+  const weeklyPlan = plan.length === 'weekly';
+  const [chosenView, setView] = useState<PlanView>('week');
+  const view: PlanView = weeklyPlan ? 'week' : chosenView;
   const [selectedDate, setSelectedDate] = useState(today);
   // Moving on (another day or view) ends Mike's notice.
   const selectDay = useCallback(
@@ -213,12 +218,14 @@ export default function PlanOverview({
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <SegmentedControl
-          options={VIEW_OPTIONS}
-          value={view}
-          onChange={changeView}
-          reduceMotion={reduceMotion}
-        />
+        {!weeklyPlan && (
+          <SegmentedControl
+            options={VIEW_OPTIONS}
+            value={view}
+            onChange={changeView}
+            reduceMotion={reduceMotion}
+          />
+        )}
 
         <FadeIn key={view} reduceMotion={reduceMotion}>
           {view === 'week' ? (

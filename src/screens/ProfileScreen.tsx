@@ -30,6 +30,7 @@ import {
 } from '../coach/planOnboardingScript';
 import {
   planAnswersChanged,
+  planLengthChanged,
   type IntensityById,
   type QuestionId,
   type RunnerProfile,
@@ -76,9 +77,10 @@ planOnboardingScript
 /**
  * "Your profile": every onboarding answer in a list, each one editable
  * through the same answer sheets as Mike's chat. Answers save as soon as
- * a sheet is confirmed. When goal, level, speed work, training days or
- * injuries changed, leaving the screen offers to update the plan or to
- * create a new one; a row at the bottom creates a new plan on demand.
+ * a sheet is confirmed. When goal, level, speed work, training days, plan
+ * length or injuries changed, leaving the screen offers to update the plan
+ * or to create a new one (first, when the plan length changed); a row at
+ * the bottom creates a new plan on demand.
  */
 export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -166,6 +168,9 @@ export default function ProfileScreen({ navigation }: Props) {
   // Leaving: when the answers behind the plan changed, ask about the plan
   // first. The leave action is held until the user chooses.
   const [syncVisible, setSyncVisible] = useState(false);
+  // The plan length changed: only a new plan really follows it, so the
+  // sheet leads with "Create a new plan".
+  const [lengthChanged, setLengthChanged] = useState(false);
   // Which plan action is running, if any.
   const [busy, setBusy] = useState<'update' | 'create' | null>(null);
   const leaveActionRef = useRef<LeaveAction | null>(null);
@@ -186,6 +191,7 @@ export default function ProfileScreen({ navigation }: Props) {
         }
         event.preventDefault();
         leaveActionRef.current = event.data.action;
+        setLengthChanged(planLengthChanged(baseline, current));
         setSyncVisible(true);
       }),
     [navigation],
@@ -238,6 +244,29 @@ export default function ProfileScreen({ navigation }: Props) {
 
   const handleUpdatePlan = () => syncPlanAndLeave('update');
   const handleCreatePlan = () => syncPlanAndLeave('create');
+
+  type ButtonVariant = React.ComponentProps<typeof Button>['variant'];
+  type ButtonStyle = React.ComponentProps<typeof Button>['style'];
+  const updatePlanButton = (variant: ButtonVariant, style?: ButtonStyle) => (
+    <Button
+      label="Update plan"
+      variant={variant}
+      loading={busy === 'update'}
+      disabled={busy === 'create'}
+      onPress={handleUpdatePlan}
+      style={style}
+    />
+  );
+  const createPlanButton = (variant: ButtonVariant, style?: ButtonStyle) => (
+    <Button
+      label="Create a new plan"
+      variant={variant}
+      loading={busy === 'create'}
+      disabled={busy === 'update'}
+      onPress={handleCreatePlan}
+      style={style}
+    />
+  );
 
   const handleKeepPlan = () => {
     if (busy) return;
@@ -447,26 +476,25 @@ export default function ProfileScreen({ navigation }: Props) {
             Update your plan with these changes?
           </Text>
           <Text style={[typography.subheadline, styles.syncBody]}>
+            {lengthChanged
+              ? 'You changed your plan length. Create a new plan starts it fresh this week, one week or four weeks ahead. '
+              : ''}
             Update plan changes only workouts that are still ahead, planned and
             not edited. Create a new plan rebuilds every planned workout from
             today on, edited ones included. Finished and skipped workouts stay.
           </Text>
         </View>
-        <Button
-          label="Update plan"
-          variant="accent"
-          loading={busy === 'update'}
-          disabled={busy === 'create'}
-          onPress={handleUpdatePlan}
-        />
-        <Button
-          label="Create a new plan"
-          variant="secondary"
-          loading={busy === 'create'}
-          disabled={busy === 'update'}
-          onPress={handleCreatePlan}
-          style={styles.keepButton}
-        />
+        {lengthChanged ? (
+          <>
+            {createPlanButton('accent')}
+            {updatePlanButton('secondary', styles.keepButton)}
+          </>
+        ) : (
+          <>
+            {updatePlanButton('accent')}
+            {createPlanButton('secondary', styles.keepButton)}
+          </>
+        )}
         <Button
           label="Keep current plan"
           variant="secondary"

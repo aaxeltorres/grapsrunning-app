@@ -6,6 +6,7 @@ import type { Plan } from '../coach/plan';
 import { planOnboardingScript } from '../coach/planOnboardingScript';
 import { createEmptyProfile, type RunnerProfile } from '../coach/runnerProfile';
 import { planStorage } from '../storage/planStorage';
+import { loadCurrentPlan } from '../storage/planSync';
 import { profileStorage } from '../storage/profileStorage';
 
 const PLAN_ONBOARDING_DONE_KEY = 'plan_onboarding_done';
@@ -16,6 +17,20 @@ function isProfileComplete(profile: RunnerProfile) {
   return buildTranscript(planOnboardingScript, profile, {
     recapConfirmed: true,
   }).isComplete;
+}
+
+/**
+ * Profiles that finished the onboarding before the plan length question
+ * had monthly plans: record that, so Your profile shows it. A profile still
+ * in the onboarding is left alone, so Mike asks.
+ */
+async function withPlanLength(profile: RunnerProfile): Promise<RunnerProfile> {
+  if (profile.planLength) return profile;
+  const migrated: RunnerProfile = { ...profile, planLength: 'monthly' };
+  await profileStorage
+    .save(migrated)
+    .catch((error) => console.warn('Failed to save runner profile', error));
+  return migrated;
 }
 
 async function createAndSavePlan(profile: RunnerProfile): Promise<Plan> {
@@ -44,18 +59,22 @@ export function usePlanOnboarding() {
     mountedRef.current = true;
 
     const load = async () => {
-      const [flag, storedProfile, storedPlan] = await Promise.all([
+      const [flag, savedProfile] = await Promise.all([
         AsyncStorage.getItem(PLAN_ONBOARDING_DONE_KEY).catch(() => null),
         profileStorage.get().catch(() => createEmptyProfile()),
-        planStorage.get().catch(() => null),
       ]);
       if (!mountedRef.current) return;
-      setProfile(storedProfile);
 
       if (flag !== 'true') {
+        setProfile(savedProfile);
         setStatus('pending');
         return;
       }
+      const storedProfile = await withPlanLength(savedProfile);
+      // A weekly plan gets the current week here when it just started.
+      const storedPlan = await loadCurrentPlan().catch(() => null);
+      if (!mountedRef.current) return;
+      setProfile(storedProfile);
       if (storedPlan) {
         setPlan(storedPlan);
         setStatus('done');
@@ -109,9 +128,10 @@ export function usePlanOnboarding() {
   const refresh = useCallback(async () => {
     if (!doneRef.current) return;
     try {
+      // On every Plan focus: a weekly plan may have reached a new week.
       const [storedProfile, storedPlan] = await Promise.all([
         profileStorage.get(),
-        planStorage.get(),
+        loadCurrentPlan(),
       ]);
       if (!mountedRef.current) return;
       setProfile(storedProfile);

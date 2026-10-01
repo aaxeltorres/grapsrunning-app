@@ -195,6 +195,26 @@ export const planOnboardingScript: ChatScriptStep[] = [
   },
 
   {
+    type: 'choice',
+    id: 'planLength',
+    input: 'cards',
+    text: 'How far ahead should I plan your training?',
+    sheetTitle: 'Plan length',
+    recapLabel: 'Plan length',
+    options: [
+      { id: 'weekly', label: 'One week at a time' },
+      { id: 'monthly', label: 'A full month' },
+    ],
+    reactions: {
+      weekly:
+        "Week by week it is! 📆 Every Monday I'll have your next week ready, building on the last one.",
+      monthly:
+        "A full month, love it! 🗓️ You'll see four weeks ahead: three to build up, one to recharge.",
+    },
+    defaultReaction: "Got it, I'll plan it that way.",
+  },
+
+  {
     type: 'message',
     id: 'details-intro',
     text: 'Almost there! Just a few quick details about you.',

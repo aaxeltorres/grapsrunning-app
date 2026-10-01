@@ -19,7 +19,7 @@ import {
   type Workout,
 } from '../coach/plan';
 import { runModeMessage, type RunModeMessageKey } from '../coach/planOnboardingScript';
-import { planStorage } from '../storage/planStorage';
+import { loadCurrentPlan } from '../storage/planSync';
 import { workoutActuals } from '../run/planResult';
 import { RUN_MODES, type RunModeId } from '../run/runModes';
 import { todayRunState, type TodayRunState } from '../run/todayWorkout';
@@ -64,8 +64,8 @@ export default function RunModeScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      planStorage
-        .get()
+      // Also adds a weekly plan's new week, so Today's workout is there.
+      loadCurrentPlan()
         .catch(() => null)
         .then((plan) => {
           if (active) setState(todayRunState(plan, today));
