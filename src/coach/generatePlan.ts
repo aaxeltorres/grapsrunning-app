@@ -1,8 +1,11 @@
 import { addDays, startOfWeek, todayISO, type ISODate } from '../utils/dates';
 import {
+  isDemandingType,
   PLAN_SCHEMA_VERSION,
+  totalDuration,
   type Pace,
   type Plan,
+  type SessionId,
   type StepKind,
   type StepTarget,
   type Workout,
@@ -10,6 +13,7 @@ import {
   type WorkoutStep,
   type WorkoutType,
 } from './plan';
+import { buildSession, isAdvancedLevel, SESSION_SPECS } from './sessions';
 import {
   isBeginnerLevel,
   type DayId,
@@ -101,6 +105,10 @@ export type Rules = {
   gentle: boolean;
   /** Interval sessions may appear (opted in, past the beginner levels). */
   intervals: boolean;
+  /** Aerobic and regenerative sessions may appear (past beginner, no pain). */
+  structured: boolean;
+  /** The advanced sessions may appear (from the 5K level up). */
+  advanced: boolean;
   easyPace: number;
 };
 
@@ -114,6 +122,8 @@ export function rulesFor(profile: RunnerProfile): Rules {
     beginner,
     gentle,
     intervals: profile.includeIntervals === true && !beginner && !gentle,
+    structured: !beginner && !gentle,
+    advanced: !beginner && isAdvancedLevel(level),
     easyPace: EASY_PACE[level],
   };
 }
@@ -176,27 +186,151 @@ function intervalDay(days: DayId[], longDay: DayId | undefined) {
   return best;
 }
 
+function nextDay(day: DayId): DayId {
+  return DAY_ORDER[(DAY_ORDER.indexOf(day) + 1) % 7];
+}
+
 /**
- * Session type per training day for one week. Demanding sessions (long
- * run, intervals) never fall on consecutive days; everything else is easy.
+ * The speed-work session of each week, by goal. Index 3 is the lighter
+ * pick of the easier fourth week. `intervals` is the classic session
+ * (e.g. 6 × 400 m).
+ */
+const QUALITY_ROTATION: Record<GoalFocus, (SessionId | 'intervals')[]> = {
+  '5k': ['intervals', 'hiit', 'sprints', 'strides'],
+  '10k': ['longIntervals', 'tempoRun', 'fartlek', 'mixedIntervals'],
+  distance: ['tempoRun', 'longIntervals', 'hiitMacro', 'fartlek'],
+  general: ['fartlek', 'hiit', 'mixedIntervals', 'strides'],
+};
+
+/** What a runner below the 5K level gets instead of an advanced session. */
+const NON_ADVANCED: Partial<Record<SessionId, SessionId>> = {
+  hiit: 'fartlek',
+  sprints: 'strides',
+  longIntervals: 'fartlek',
+  tempoRun: 'mixedIntervals',
+  hiitMacro: 'mixedIntervals',
+};
+
+/** Aerobic sessions alternate week by week. */
+const AEROBIC_ROTATION: SessionId[] = ['extensiveAerobic', 'progressive'];
+
+// Weeks 1-3 build up; week 4 (index 3) is the lighter one.
+const DELOAD_WEEK = 3;
+
+type Assignment = { type: WorkoutType; session?: SessionId };
+
+function qualitySession(rules: Rules, week: number): Assignment {
+  let pick = QUALITY_ROTATION[rules.focus][week % 4];
+  if (pick !== 'intervals' && SESSION_SPECS[pick].advanced && !rules.advanced) {
+    pick = NON_ADVANCED[pick] ?? 'intervals';
+  }
+  return pick === 'intervals'
+    ? { type: 'intervals' }
+    : { type: SESSION_SPECS[pick].category, session: pick };
+}
+
+function aerobicSession(week: number): Assignment {
+  const session = AEROBIC_ROTATION[week % AEROBIC_ROTATION.length];
+  return { type: SESSION_SPECS[session].category, session };
+}
+
+function aerobicThisWeek(rules: Rules, week: number) {
+  // General-fitness goals get it every other week, like intervals.
+  return rules.focus === 'general' ? week % 2 === 1 : true;
+}
+
+/**
+ * Session per training day for one week. Demanding sessions (long run,
+ * intervals, speed, tempo) never fall on consecutive days. Around them:
+ * - the quality day (as far as possible from the long run) holds the
+ *   speed-work session, or an aerobic one for runners without speed work;
+ * - runners with speed work and a 10K or longer goal get a second, aerobic
+ *   session on a day that touches no demanding one (not in week 4);
+ * - an easy day right after a demanding one becomes a regenerative run.
+ * Beginners and runners with pain keep easy runs (and their long run).
  */
 function weekTypes(
   days: DayId[],
   rules: Rules,
   week: number,
-): Map<DayId, WorkoutType> {
-  const types = new Map<DayId, WorkoutType>(days.map((day) => [day, 'easy']));
+): Map<DayId, Assignment> {
+  const types = new Map<DayId, Assignment>(days.map((day) => [day, { type: 'easy' }]));
   const longDay =
     days.length >= 2 && longRunThisWeek(rules, week)
       ? longRunDay(days)
       : undefined;
-  if (longDay) types.set(longDay, 'long');
+  if (longDay) types.set(longDay, { type: 'long' });
 
-  if (days.length >= 2 && intervalsThisWeek(rules, week)) {
-    const day = intervalDay(days, longDay);
-    if (day) types.set(day, 'intervals');
+  const qualityDay = days.length >= 2 ? intervalDay(days, longDay) : undefined;
+  if (qualityDay && intervalsThisWeek(rules, week)) {
+    types.set(qualityDay, qualitySession(rules, week));
+  } else if (qualityDay && rules.structured && aerobicThisWeek(rules, week)) {
+    // Every other week for general goals: still alternate between them.
+    types.set(qualityDay, aerobicSession(rules.focus === 'general' ? Math.floor(week / 2) : week));
+  }
+
+  if (!rules.structured) return types;
+
+  const demanding = (day: DayId) => {
+    const assigned = types.get(day);
+    return assigned !== undefined && isDemandingType(assigned.type);
+  };
+  const isEasy = (day: DayId) => {
+    const assigned = types.get(day);
+    return assigned?.type === 'easy' && assigned.session === undefined;
+  };
+
+  if (
+    rules.intervals &&
+    (rules.focus === '10k' || rules.focus === 'distance') &&
+    week !== DELOAD_WEEK
+  ) {
+    const extra = days.find(
+      (day) => isEasy(day) && !demanding(previousDay(day)) && !demanding(nextDay(day)),
+    );
+    if (extra) types.set(extra, aerobicSession(week + 1));
+  }
+
+  for (const day of days) {
+    if (isEasy(day) && demanding(previousDay(day))) {
+      types.set(day, { type: 'easy', session: 'regenerative' });
+    }
   }
   return types;
+}
+
+/** A session's length relative to the reference, by level. */
+const SESSION_LEVEL_SCALE: Record<LevelId, number> = {
+  not_running: 0.7,
+  run_walk: 0.7,
+  run_30: 0.85,
+  run_5k: 1,
+  run_10k_plus: 1.15,
+};
+
+/** A regenerative run is a bit shorter than the week's easy run. */
+const REGENERATIVE_SHARE = 0.85;
+
+/**
+ * A generated session: scaled by level and by the week's load. A
+ * regenerative run follows the runner's own easy run instead, so it is
+ * never longer than their other easy days.
+ */
+export function sessionSegments(
+  workoutId: string,
+  session: SessionId,
+  rules: Rules,
+  week: number,
+): WorkoutSegment[] {
+  if (session === 'regenerative') {
+    const easy = totalDuration({ segments: buildSegments(workoutId, 'easy', rules, week) });
+    return buildSession(workoutId, session, rules.easyPace, {
+      totalSeconds: Math.max(minutes(SESSION_SPECS.regenerative.minMinutes), easy * REGENERATIVE_SHARE),
+    });
+  }
+  return buildSession(workoutId, session, rules.easyPace, {
+    scale: SESSION_LEVEL_SCALE[rules.level] * WEEK_LOAD[week],
+  });
 }
 
 export const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -335,14 +469,17 @@ export function buildMockPlan(
       const date = addDays(startDate, week * 7 + dayIndex);
       if (date < today) return;
 
-      const type = types.get(day) ?? 'rest';
+      const { type, session }: Assignment = types.get(day) ?? { type: 'rest' };
       const id = `w-${date}`;
       workouts.push({
         id,
         date,
         type,
+        ...(session ? { session } : {}),
         status: 'planned',
-        segments: buildSegments(id, type, rules, week),
+        segments: session
+          ? sessionSegments(id, session, rules, week)
+          : buildSegments(id, type, rules, week),
       });
     });
   }
@@ -365,9 +502,11 @@ export function buildMockPlan(
  * (grapsrunning-backend), sending the profile as-is and validating the
  * returned JSON against the `Plan` type. Injuries and `injuryStatus`
  * must be respected there: 'hurts_now' keeps the plan gentle. The same
- * rules as the mock apply: no demanding sessions on consecutive days,
- * no intervals unless `includeIntervals` (and never for beginners), and
- * beginners' first long run in week 3.
+ * rules as the mock apply: no demanding sessions (long, intervals, speed,
+ * tempo) on consecutive days, no interval or speed sessions unless
+ * `includeIntervals` (and never for beginners), the advanced sessions
+ * only from the 5K level up, and beginners' first long run in week 3.
+ * Sessions come back with `session` set, built as in `sessions.ts`.
  */
 export async function generatePlan(
   profile: RunnerProfile,
