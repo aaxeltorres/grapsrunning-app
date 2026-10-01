@@ -1,7 +1,7 @@
 import type { RunModeId } from '../run/runModes';
 import type { RunGoal } from '../run/goals';
 import type { Split } from '../run/splits';
-import type { Workout } from '../coach/plan';
+import type { RepResult, Workout } from '../coach/plan';
 
 export type RouteCoordinate = {
   latitude: number;
@@ -40,6 +40,8 @@ export type RootStackParamList = {
     splits?: Split[];
     /** Set when the run was a plan workout: what was planned, to compare. */
     planned?: { workout: Workout; partial: boolean };
+    /** Plan workouts with reps: every work step as it was run. */
+    reps?: RepResult[];
   };
 };
 

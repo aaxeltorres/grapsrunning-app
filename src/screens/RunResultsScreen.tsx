@@ -9,6 +9,7 @@ import RunRouteCard from '../components/RunRouteCard';
 import RunSplits from '../components/RunSplits';
 import GoalResultsSection from '../components/GoalResultsSection';
 import PlanComparisonSection from '../components/PlanComparisonSection';
+import RepResultsSection from '../components/RepResultsSection';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { isRunTooShort } from '../run/splits';
@@ -31,6 +32,7 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     calories,
     splits = [],
     planned,
+    reps,
   } = route.params;
   const reduceMotion = useReduceMotion();
   const tooShort = isRunTooShort(distanceKm, durationSeconds);
@@ -105,6 +107,10 @@ export default function RunResultsScreen({ route, navigation }: Props) {
         />
       ),
     });
+  }
+  // The reps of a structured workout, right under planned vs actual.
+  if (planned && reps && reps.length > 0 && !tooShort) {
+    sections.push({ key: 'reps', node: <RepResultsSection reps={reps} /> });
   }
   if (!tooShort && splits.some((split) => !split.partial)) {
     sections.push({ key: 'splits', node: <RunSplits splits={splits} /> });

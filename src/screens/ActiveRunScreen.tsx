@@ -14,6 +14,7 @@ import { DEFAULT_RUN_MODE } from '../run/runModes';
 import { buildWorkoutResult, recordWorkoutRun } from '../run/planResult';
 import { computeSplits, isRunTooShort } from '../run/splits';
 import { planStorage } from '../storage/planStorage';
+import type { RepResult } from '../coach/plan';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 
@@ -128,7 +129,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
    * done keeps its first result. Never blocks the results: a storage
    * failure only means the Plan isn't updated.
    */
-  const recordPlanRun = async (completedAll: boolean) => {
+  const recordPlanRun = async (completedAll: boolean, reps: RepResult[] | undefined) => {
     if (!workout) return undefined;
     const counts = !isRunTooShort(distanceKm, durationSeconds);
     const partial = !completedAll;
@@ -137,6 +138,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
         distanceKm,
         durationSeconds,
         startedAt: startedAtRef.current ?? undefined,
+        reps,
       });
       try {
         await planStorage.update((plan) =>
@@ -149,9 +151,10 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     return counts ? { workout, partial } : undefined;
   };
 
-  const handleFinish = async (summary?: { completedAll: boolean }) => {
+  const handleFinish = async (summary?: { completedAll: boolean; reps?: RepResult[] }) => {
     await finishRun();
-    const planned = await recordPlanRun(summary?.completedAll ?? false);
+    const reps = summary?.reps;
+    const planned = await recordPlanRun(summary?.completedAll ?? false, reps);
     navigation.replace('RunResults', {
       distanceKm,
       durationSeconds,
@@ -166,6 +169,8 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
       calories,
       splits: computeSplits(runRoute),
       planned,
+      // Only alongside the planned block: a run too short to count shows none.
+      reps: planned && reps && reps.length > 0 ? reps : undefined,
     });
   };
 
