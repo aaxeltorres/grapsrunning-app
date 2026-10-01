@@ -143,8 +143,9 @@ function PlanRun({
   };
 
   const handleFinish = () => {
+    const summary = run.outcome();
     run.finishEarly();
-    onFinish();
+    onFinish(summary);
   };
 
   const paused = runState === 'paused';

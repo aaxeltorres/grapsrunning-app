@@ -226,7 +226,7 @@ function GoalRun({
           label="Finish"
           variant="runFinish"
           appearanceAnim={themeAnim}
-          onPress={onFinish}
+          onPress={() => onFinish()}
           style={styles.controlButton}
         />
       </View>

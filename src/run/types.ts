@@ -21,5 +21,6 @@ export type RunViewProps = {
   workout?: Workout;
   onPause: () => void;
   onResume: () => void;
-  onFinish: () => void;
+  /** Plan workout runs say whether every segment was run (otherwise it's partial). */
+  onFinish: (summary?: { completedAll: boolean }) => void;
 };

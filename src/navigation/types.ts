@@ -38,6 +38,8 @@ export type RootStackParamList = {
     calories?: number;
     /** Per-kilometer splits, empty when there is no complete kilometer. */
     splits?: Split[];
+    /** Set when the run was a plan workout: what was planned, to compare. */
+    planned?: { workout: Workout; partial: boolean };
   };
 };
 

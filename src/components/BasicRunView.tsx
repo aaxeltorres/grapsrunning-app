@@ -103,7 +103,7 @@ export default function BasicRunView({
           label="Finish"
           variant="runFinish"
           appearanceAnim={themeAnim}
-          onPress={onFinish}
+          onPress={() => onFinish()}
           style={styles.controlButton}
         />
       </View>

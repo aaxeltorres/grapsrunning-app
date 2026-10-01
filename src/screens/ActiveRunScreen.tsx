@@ -11,7 +11,9 @@ import PlanRunView from '../components/PlanRunView';
 import { useRunTracking } from '../hooks/useRunTracking';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { DEFAULT_RUN_MODE } from '../run/runModes';
-import { computeSplits } from '../run/splits';
+import { buildWorkoutResult, recordWorkoutRun } from '../run/planResult';
+import { computeSplits, isRunTooShort } from '../run/splits';
+import { planStorage } from '../storage/planStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 
@@ -119,8 +121,37 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     fadeTheme(1);
   };
 
-  const handleFinish = async () => {
+  /**
+   * A plan run marks its workout completed, or partial when it was cut
+   * short or had skipped parts, and saves the actual stats. A run that is
+   * too short to count records nothing, and a workout that was already
+   * done keeps its first result. Never blocks the results: a storage
+   * failure only means the Plan isn't updated.
+   */
+  const recordPlanRun = async (completedAll: boolean) => {
+    if (!workout) return undefined;
+    const counts = !isRunTooShort(distanceKm, durationSeconds);
+    const partial = !completedAll;
+    if (counts && workout.status === 'planned') {
+      const result = buildWorkoutResult({
+        distanceKm,
+        durationSeconds,
+        startedAt: startedAtRef.current ?? undefined,
+      });
+      try {
+        await planStorage.update((plan) =>
+          recordWorkoutRun(plan, workout.id, { result, partial }),
+        );
+      } catch (error) {
+        console.warn('Failed to save the workout result', error);
+      }
+    }
+    return counts ? { workout, partial } : undefined;
+  };
+
+  const handleFinish = async (summary?: { completedAll: boolean }) => {
     await finishRun();
+    const planned = await recordPlanRun(summary?.completedAll ?? false);
     navigation.replace('RunResults', {
       distanceKm,
       durationSeconds,
@@ -134,6 +165,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
       startedAt: startedAtRef.current ?? undefined,
       calories,
       splits: computeSplits(runRoute),
+      planned,
     });
   };
 

@@ -32,10 +32,17 @@ type Result = {
   /** The current segment's pace is off its target range. */
   paceAlert: boolean;
   skip: () => void;
+  /**
+   * Read it before `finishEarly`: whether every segment was run, none
+   * skipped. Anything else is a partial workout.
+   */
+  outcome: () => WorkoutOutcome;
   /** Call before leaving the run with Finish. */
   finishEarly: () => void;
   events: WorkoutEventBus;
 };
+
+export type WorkoutOutcome = { completedAll: boolean };
 
 /**
  * Runs a workout on the tracking ticks: starts the engine once tracking
@@ -54,6 +61,17 @@ export function useWorkoutRun(
   // Re-renders the view when the engine moves to another segment.
   const [, setSegmentIndex] = useState(0);
   const [paceAlert, setPaceAlert] = useState(false);
+  const skippedRef = useRef(0);
+
+  useEffect(
+    () =>
+      events.subscribe((event) => {
+        if (event.type === 'segmentEnd' && event.reason === 'skipped') {
+          skippedRef.current += 1;
+        }
+      }),
+    [events],
+  );
 
   const sample: WorkoutSample = { movingSeconds: durationSeconds, distanceKm };
   const sampleRef = useRef(sample);
@@ -100,6 +118,16 @@ export function useWorkoutRun(
     if (engineRef.current) apply(skipSegment(engineRef.current, sampleRef.current));
   }, [apply]);
 
+  const outcome = useCallback(
+    (): WorkoutOutcome => ({
+      completedAll:
+        engineRef.current !== null &&
+        isComplete(engineRef.current) &&
+        skippedRef.current === 0,
+    }),
+    [],
+  );
+
   const finishEarly = useCallback(() => {
     if (engineRef.current) apply(finishEngine(engineRef.current, sampleRef.current));
   }, [apply]);
@@ -114,6 +142,7 @@ export function useWorkoutRun(
     complete: engine ? isComplete(engine) : segments.length === 0,
     paceAlert,
     skip,
+    outcome,
     finishEarly,
     events,
   };
