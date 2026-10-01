@@ -24,6 +24,7 @@ import {
 } from '../coach/planOnboardingScript';
 import {
   planAnswersChanged,
+  type IntensityById,
   type QuestionId,
   type RunnerProfile,
 } from '../coach/runnerProfile';
@@ -34,6 +35,7 @@ import BottomSheet from '../components/BottomSheet';
 import Button from '../components/Button';
 import ChatBubble from '../components/ChatBubble';
 import MikeAvatar from '../components/MikeAvatar';
+import OptionTile from '../components/OptionTile';
 import TopBar from '../components/TopBar';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { planStorage } from '../storage/planStorage';
@@ -45,6 +47,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 type LeaveAction = Parameters<Props['navigation']['dispatch']>[0];
 
 const UNANSWERED_LABEL = 'Not answered';
+
+const INTENSITY_LABELS: Record<IntensityById, string> = {
+  pace: 'Pace',
+  heartRate: 'Heart rate',
+};
 
 type SheetState = {
   questionId: QuestionId | null;
@@ -209,6 +216,37 @@ export default function ProfileScreen({ navigation }: Props) {
     leave();
   };
 
+  // "Intensity by": a setting, saved right away. It never makes the plan
+  // out of date, so leaving afterwards doesn't offer a plan update.
+  const [intensityVisible, setIntensityVisible] = useState(false);
+  const [heartRateTapped, setHeartRateTapped] = useState(false);
+
+  const openIntensity = () => {
+    if (sheet.active) return;
+    setHeartRateTapped(false);
+    setIntensityVisible(true);
+  };
+
+  const choosePace = () => {
+    lightImpact();
+    const saved = savedRef.current;
+    if (saved && saved.intensityBy !== 'pace') {
+      const next: RunnerProfile = { ...saved, intensityBy: 'pace' };
+      savedRef.current = next;
+      setProfile(next);
+      profileStorage
+        .save(next)
+        .catch((error) => console.warn('Failed to save runner profile', error));
+    }
+    setIntensityVisible(false);
+  };
+
+  // Heart rate isn't available yet: say so and keep pace.
+  const chooseHeartRate = () => {
+    lightImpact();
+    setHeartRateTapped(true);
+  };
+
   const rows = useMemo(
     () =>
       profile
@@ -258,6 +296,22 @@ export default function ProfileScreen({ navigation }: Props) {
               />
             ))}
           </View>
+
+          <View style={styles.section}>
+            <Text
+              accessibilityRole="header"
+              style={[typography.subheadline, styles.sectionTitle]}
+            >
+              Training
+            </Text>
+            <View style={styles.list}>
+              <AnswerRow
+                label="Intensity by"
+                value={INTENSITY_LABELS[profile.intensityBy ?? 'pace']}
+                onPress={openIntensity}
+              />
+            </View>
+          </View>
         </ScrollView>
       ) : (
         <View style={styles.loading}>
@@ -279,6 +333,38 @@ export default function ProfileScreen({ navigation }: Props) {
         onClosed={handleSheetClosed}
         reduceMotion={reduceMotion}
       />
+
+      <BottomSheet
+        visible={intensityVisible}
+        onDismiss={() => setIntensityVisible(false)}
+        reduceMotion={reduceMotion}
+      >
+        <View style={styles.syncHeader}>
+          <Text style={[typography.title2, styles.syncTitle]}>Intensity by</Text>
+          <Text style={[typography.subheadline, styles.syncBody]}>
+            How your training zones are measured.
+          </Text>
+        </View>
+        <View style={styles.options}>
+          <OptionTile label="Pace" role="radio" selected onPress={choosePace} />
+          <OptionTile
+            label="Heart rate"
+            role="radio"
+            selected={false}
+            onPress={chooseHeartRate}
+          />
+        </View>
+        {heartRateTapped && (
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[typography.subheadline, styles.comingSoon]}
+          >
+            Coming soon. Heart rate zones need a heart rate sensor, so your zones
+            stay on pace for now.
+          </Text>
+        )}
+        <Button label="Done" variant="secondary" onPress={choosePace} />
+      </BottomSheet>
 
       <BottomSheet
         visible={syncVisible}
@@ -358,5 +444,20 @@ const styles = StyleSheet.create({
   },
   keepButton: {
     marginTop: spacing.xs,
+  },
+  section: {
+    gap: spacing.xs,
+  },
+  sectionTitle: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  options: {
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  comingSoon: {
+    color: colors.planCardAccent,
+    marginBottom: spacing.md,
   },
 });

@@ -71,6 +71,12 @@ export type QuestionId = keyof RunnerAnswers;
 
 export const RUNNER_PROFILE_SCHEMA_VERSION = 1;
 
+/**
+ * What training zones are measured by. Only pace exists: there is no heart
+ * rate in the app yet, so 'heartRate' is never stored for now.
+ */
+export type IntensityById = 'pace' | 'heartRate';
+
 export type RunnerProfile = Partial<RunnerAnswers> & {
   schemaVersion: typeof RUNNER_PROFILE_SCHEMA_VERSION;
   /**
@@ -78,6 +84,11 @@ export type RunnerProfile = Partial<RunnerAnswers> & {
    * counts as no); missing means false.
    */
   includeIntervals?: boolean;
+  /**
+   * A setting, not an onboarding answer: missing means pace, and changing
+   * it never asks to update the plan (it isn't in `PLAN_ANSWER_IDS`).
+   */
+  intensityBy?: IntensityById;
   /** ISO timestamp of the last save. */
   updatedAt?: string;
 };
