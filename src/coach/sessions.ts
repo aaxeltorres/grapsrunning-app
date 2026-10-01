@@ -180,7 +180,7 @@ const TEMPLATES: Record<SessionId, (m: Make) => Part[]> = {
  * The step's pace: its zone's range, unless GPS can't judge a pace over
  * it (a manual step, an effort under 30 s, a sprint under 100 m).
  */
-function paceFor(target: StepTarget, zone: Zone | undefined, easyPace: number): Pace | null {
+export function paceFor(target: StepTarget, zone: Zone | undefined, easyPace: number): Pace | null {
   if (zone === undefined || target.type === 'manual') return null;
   if (target.type === 'duration' && target.seconds < MIN_PACED_EFFORT_S) return null;
   if (target.type === 'distance' && target.meters < MIN_MEASURED_DISTANCE_M) return null;

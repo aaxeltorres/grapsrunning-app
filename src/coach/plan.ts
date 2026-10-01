@@ -104,6 +104,9 @@ export type WorkoutStep = {
  * With `sets`, the whole block runs `sets` times, e.g. 2 × 8 × (20 s +
  * 1 min); `macroRest` then replaces the micro rest after the last rep of
  * every set but the last one.
+ *
+ * `noFinalRest` drops the micro rest after the very last rep of the last
+ * set, for a block that ends the workout (nothing to recover for).
  */
 export type RepeatGroup = {
   id: string;
@@ -111,6 +114,7 @@ export type RepeatGroup = {
   steps: WorkoutStep[];
   sets?: number;
   macroRest?: WorkoutStep;
+  noFinalRest?: boolean;
 };
 
 export type WorkoutSegment = WorkoutStep | RepeatGroup;
@@ -222,7 +226,8 @@ export function isRest(step: Pick<WorkoutStep, 'kind'>) {
 /**
  * Every step in execution order: repeat groups unrolled, sets repeated,
  * and the macro rest in place of the last micro rest of each set but the
- * last. A group without `sets` unrolls exactly as before sets existed.
+ * last. A group without `sets` unrolls exactly as before sets existed, and
+ * one without `noFinalRest` as before that flag existed.
  */
 export function unrollSegments(segments: WorkoutSegment[]): UnrolledStep[] {
   const out: UnrolledStep[] = [];
@@ -241,7 +246,12 @@ export function unrollSegments(segments: WorkoutSegment[]): UnrolledStep[] {
             ? segment.macroRest
             : undefined;
         let steps = segment.steps;
-        if (macro && steps.length > 0 && isRest(steps[steps.length - 1])) {
+        const last = s === sets && n === segment.repeat;
+        if (
+          (macro !== undefined || (last && segment.noFinalRest === true)) &&
+          steps.length > 0 &&
+          isRest(steps[steps.length - 1])
+        ) {
           steps = steps.slice(0, -1);
         }
         for (const step of steps) out.push({ step, rep, set });
