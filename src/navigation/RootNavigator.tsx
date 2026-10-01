@@ -8,6 +8,7 @@ import {
   HomeScreen,
   StatsScreen,
   PlaceholderScreen,
+  RunModeScreen,
   ActiveRunScreen,
   RunResultsScreen,
   PlanScreen,
@@ -44,12 +45,22 @@ export default function RootNavigator() {
         {/* Stub destinations so Home cards never dead-end */}
         <Stack.Screen name="CoachMike" component={PlaceholderScreen} />
         <Stack.Screen name="Routes" component={PlaceholderScreen} />
-        <Stack.Screen 
-          name="ActiveRun" 
-          component={ActiveRunScreen} 
-          options={{ presentation: 'fullScreenModal' }} 
+        <Stack.Screen
+          name="RunMode"
+          component={RunModeScreen}
+          options={{ animation: 'slide_from_bottom' }}
         />
-        <Stack.Screen name="RunResults" component={RunResultsScreen} />
+        <Stack.Screen
+          name="ActiveRun"
+          component={ActiveRunScreen}
+          options={{ presentation: 'fullScreenModal' }}
+        />
+        {/* Fade, so the dark Active Run hands over to the light results. */}
+        <Stack.Screen
+          name="RunResults"
+          component={RunResultsScreen}
+          options={{ animation: 'fade' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

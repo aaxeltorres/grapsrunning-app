@@ -43,7 +43,7 @@ export function formatMinutes(seconds: number) {
 }
 
 /** "5:10" or "6:05–6:35" */
-function formatPace(pace: Pace) {
+export function formatPace(pace: Pace) {
   return typeof pace === 'number'
     ? formatPaceSeconds(pace)
     : `${formatPaceSeconds(pace.min)}–${formatPaceSeconds(pace.max)}`;

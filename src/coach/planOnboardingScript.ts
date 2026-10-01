@@ -429,3 +429,32 @@ export function editorMessage(kind: EditorKind, fraction: number): string {
 /** Soft warning in the workout editor; saving stays allowed. */
 export const editorHardSessionHint =
   'Heads up: this is next to another hard session.';
+
+/** Mike's lines on the run mode selector, by what today's plan says. */
+export const runModeMessages = {
+  planned: [
+    "Today's workout is ready when you are. Or just run, your call! 👟",
+    'Your plan has a run for today. Want to follow it? 💪',
+    "Workout day! Pick it below, or keep it free and easy. 🌤️",
+  ],
+  completed: [
+    "Today's workout is done. Want a bonus run? 😄",
+    "You already crushed today's run. A little extra is up to you! 🎉",
+  ],
+  rest: [
+    'Rest day on the plan. A relaxed run is fine if your legs want it. 🌿',
+    'Recovery day! If you run, keep it short and easy. 💙',
+  ],
+  none: [
+    "How do you want to run today? I'm with you either way! 🏃",
+    "Ready when you are. Pick a way to start and let's go! 👟",
+  ],
+} as const;
+
+export type RunModeMessageKey = keyof typeof runModeMessages;
+
+/** Mike's line for the selector. Rotates with the date, so it is deterministic. */
+export function runModeMessage(key: RunModeMessageKey, date: ISODate): string {
+  const lines = runModeMessages[key];
+  return lines[dayNumber(date) % lines.length];
+}

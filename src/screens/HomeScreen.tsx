@@ -35,7 +35,7 @@ export default function HomeScreen({ navigation }: Props) {
 
       <Pressable 
         style={styles.fab}
-        onPress={() => navigation.navigate('ActiveRun')}
+        onPress={() => navigation.navigate('RunMode')}
       >
         <View style={styles.fabIconPlay} />
         <Text style={styles.fabText}>Start run</Text>

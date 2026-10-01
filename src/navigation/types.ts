@@ -1,3 +1,5 @@
+import type { RunModeId } from '../run/runModes';
+
 export type RouteCoordinate = {
   latitude: number;
   longitude: number;
@@ -15,7 +17,9 @@ export type RootStackParamList = {
   // so navigation from Home doesn't dead-end.
   CoachMike: undefined;
   Routes: undefined;
-  ActiveRun: undefined;
+  RunMode: undefined;
+  /** No params (or no mode) starts a quick run. */
+  ActiveRun: { mode?: RunModeId } | undefined;
   RunResults: {
     distanceKm: number;
     durationSeconds: number;
