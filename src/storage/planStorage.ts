@@ -35,6 +35,19 @@ export const planStorage = {
     await AsyncStorage.setItem(PLAN_KEY, JSON.stringify(plan));
   },
 
+  /**
+   * Reads the saved plan, applies `change` and saves the result when it is
+   * a different plan. Returns the plan that is stored afterwards, or `null`
+   * when there is none.
+   */
+  async update(change: (plan: Plan) => Plan): Promise<Plan | null> {
+    const plan = await planStorage.get();
+    if (!plan) return null;
+    const next = change(plan);
+    if (next !== plan) await planStorage.save(next);
+    return next;
+  },
+
   async clear(): Promise<void> {
     await AsyncStorage.removeItem(PLAN_KEY);
   },

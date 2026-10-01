@@ -11,7 +11,8 @@ import type { ISODate } from '../utils/dates';
 export const PLAN_SCHEMA_VERSION = 1;
 
 export type WorkoutType = 'easy' | 'intervals' | 'long' | 'rest';
-export type WorkoutStatus = 'planned' | 'completed' | 'skipped';
+/** `partial`: the run was started but cut short (finished early or skipped parts). */
+export type WorkoutStatus = 'planned' | 'completed' | 'partial' | 'skipped';
 export type StepKind = 'warmup' | 'steady' | 'work' | 'recovery' | 'cooldown';
 
 /** How long a step lasts: a distance or a duration. */
@@ -39,11 +40,29 @@ export type RepeatGroup = {
 
 export type WorkoutSegment = WorkoutStep | RepeatGroup;
 
+/** What the runner actually did when a plan workout was run. */
+export type WorkoutResult = {
+  distanceMeters: number;
+  durationSeconds: number;
+  /** Seconds per km, `null` when the run was too short to have a pace. */
+  avgPaceSecPerKm: number | null;
+  /** When the run was finished (ISO timestamp). */
+  completedAt: string;
+  /** When the run started (ms since epoch). */
+  startedAt?: number;
+};
+
 export type Workout = {
   id: string;
   date: ISODate;
   type: WorkoutType;
   status: WorkoutStatus;
+  /**
+   * The actual run, set when the workout is `completed` or `partial`.
+   * Missing on planned workouts and on workouts finished before results
+   * were stored: readers fall back to the planned values.
+   */
+  result?: WorkoutResult;
   /**
    * The user changed this workout by hand (the workout editor sets it).
    * Regenerating the plan never replaces an edited workout. Missing means
@@ -72,6 +91,11 @@ export type Plan = {
  * free jogs). Only for totals; never shown as a target.
  */
 const UNPACED_ESTIMATE_SEC_PER_KM = 600;
+
+/** The workout was run: completed, or cut short (partial). */
+export function isFinished(workout: Pick<Workout, 'status'>) {
+  return workout.status === 'completed' || workout.status === 'partial';
+}
 
 export function isRepeatGroup(segment: WorkoutSegment): segment is RepeatGroup {
   return 'repeat' in segment;

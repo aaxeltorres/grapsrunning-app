@@ -376,7 +376,11 @@ export async function generatePlan(
   return buildMockPlan(profile, today);
 }
 
-/** A workout the user can still change: ahead of us, planned, never edited. */
+/**
+ * A workout the user can still change: ahead of us, planned, never edited.
+ * Only `planned` qualifies, so completed and partial workouts (and their
+ * stored results) are never touched.
+ */
 function isRegeneratable(workout: Workout, today: ISODate) {
   return (
     workout.date >= today && workout.status === 'planned' && !workout.edited
