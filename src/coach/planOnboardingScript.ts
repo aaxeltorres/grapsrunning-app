@@ -1,4 +1,5 @@
 import { dayNumber, type ISODate } from '../utils/dates';
+import type { EditorKind } from './workoutEditor';
 import { isBeginnerLevel } from './runnerProfile';
 import type { ChatScriptStep } from './types';
 
@@ -390,3 +391,41 @@ export function planDayMessage(key: PlanDayMessageKey, date: ISODate): string {
 /** Mike's line at the top of the "Your profile" screen. */
 export const profileScreenMessage =
   'Need to change something? Tap any answer. 👆';
+
+/**
+ * Mike's line in the workout editor: one per run type and length band
+ * (shortest third, middle third, longest third of what the type allows).
+ */
+export const editorMessages: Record<EditorKind, [string, string, string]> = {
+  easy: [
+    'A short and sweet easy run. Perfect for a busy day! 😊',
+    'A solid easy run. Keep it chatty and relaxed. 💬',
+    'Lots of easy time on your feet. Stay gentle and enjoy it! 🌿',
+  ],
+  runWalk: [
+    'A quick run/walk. Even a little counts! 👟',
+    'A nice mix of running and walking. Stay comfortable! 🔁',
+    "A longer run/walk. Take the walk breaks, they'll carry you! 💪",
+  ],
+  long: [
+    'A gentle long run. Starting here is a smart move! 🌄',
+    'A proper long run. Start slow and bring some water! 💧',
+    'Big distance! Go easy, break it into chunks and enjoy the road. 🛣️',
+  ],
+  intervals: [
+    'A short speed session. Quick, fun and over before you know it! ⚡️',
+    'A solid set of intervals. Warm up well first! 🔥',
+    "Lots of reps! Stay smooth and don't burn out early. 🚀",
+  ],
+};
+
+/** Mike's line for a run type and where its length sits (0 to 1). */
+export function editorMessage(kind: EditorKind, fraction: number): string {
+  const lines = editorMessages[kind];
+  const band = fraction < 1 / 3 ? 0 : fraction < 2 / 3 ? 1 : 2;
+  return lines[band];
+}
+
+/** Soft warning in the workout editor; saving stays allowed. */
+export const editorHardSessionHint =
+  'Heads up: this is next to another hard session.';
