@@ -13,6 +13,7 @@ import type { Plan, Workout } from '../coach/plan';
 import {
   editorHardSessionHint,
   editorMessage,
+  editorMessages,
 } from '../coach/planOnboardingScript';
 import type { RunnerProfile } from '../coach/runnerProfile';
 import {
@@ -232,18 +233,12 @@ function EditorContent({
           reduceMotion={reduceMotion}
         />
 
-        <View style={styles.mikeRow}>
-          <MikeAvatar />
-          <View style={styles.mikeBubble}>
-            {/* Keyed by the line, so a new one pops in like a chat. */}
-            <ChatBubble
-              key={message}
-              text={message}
-              sender="mike"
-              reduceMotion={reduceMotion}
-            />
-          </View>
-        </View>
+        <MikeLine
+          key={draft.kind}
+          message={message}
+          alternatives={editorMessages[draft.kind]}
+          reduceMotion={reduceMotion}
+        />
 
         <DurationBar
           kind={draft.kind}
@@ -255,6 +250,11 @@ function EditorContent({
           reduceMotion={reduceMotion}
         />
 
+        {showHint && <Hint reduceMotion={reduceMotion} />}
+      </ScrollView>
+
+      {/* Pinned above the footer: never pushed out of view by the content. */}
+      <View style={styles.summaryBlock}>
         <Summary
           seconds={stats.seconds}
           meters={stats.meters}
@@ -263,9 +263,7 @@ function EditorContent({
           topZone={stats.topZone}
           reduceMotion={reduceMotion}
         />
-
-        {showHint && <Hint reduceMotion={reduceMotion} />}
-      </ScrollView>
+      </View>
 
       <View style={styles.footer}>
         <Button
@@ -275,6 +273,63 @@ function EditorContent({
           onPress={handleSave}
         />
         <Button label="Cancel" variant="secondary" onPress={onCancel} />
+      </View>
+    </View>
+  );
+}
+
+type MikeLineProps = {
+  message: string;
+  /** Every line Mike can say for this run type. */
+  alternatives: readonly string[];
+  reduceMotion: boolean;
+};
+
+/**
+ * Mike's line with the avatar. The bubble area keeps the height of the
+ * tallest line it can show, so a longer line never pushes the duration bar
+ * down while it is being dragged.
+ */
+function MikeLine({ message, alternatives, reduceMotion }: MikeLineProps) {
+  const [minHeight, setMinHeight] = useState(0);
+  const measured = useRef<number[]>([]);
+
+  const handleMeasure = (index: number, height: number) => {
+    measured.current[index] = height;
+    setMinHeight(Math.max(...measured.current.filter((h) => h !== undefined)));
+  };
+
+  return (
+    <View style={styles.mikeRow}>
+      <MikeAvatar />
+      <View style={[styles.mikeBubble, { minHeight }]}>
+        {/* Keyed by the line, so a new one pops in like a chat. */}
+        <ChatBubble
+          key={message}
+          text={message}
+          sender="mike"
+          reduceMotion={reduceMotion}
+        />
+        {/* Invisible copies of every line, only to measure the tallest. */}
+        {alternatives.map((text, index) => (
+          <View
+            key={text}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={styles.mikeMeasure}
+            onLayout={(event) =>
+              handleMeasure(index, event.nativeEvent.layout.height)
+            }
+          >
+            <ChatBubble
+              text={text}
+              sender="mike"
+              animateOnMount={false}
+              reduceMotion
+            />
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -403,6 +458,16 @@ const styles = StyleSheet.create({
   },
   mikeBubble: {
     flex: 1,
+  },
+  mikeMeasure: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    opacity: 0,
+  },
+  summaryBlock: {
+    paddingVertical: spacing.sm,
   },
   summary: {
     gap: spacing.sm,
