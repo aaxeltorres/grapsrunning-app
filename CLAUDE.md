@@ -11,8 +11,8 @@ A running app in the style of Nike Run Club / Adidas Running / Strava, with a vi
 - Follows up when the user misses a training day.
 - Generates a personalized training routine, shown in the Plan section.
 
-Implemented today: fake auth/sign-in, Home dashboard, Stats, GPS run tracking (background location), Run results with route map, the Plan onboarding (Mike's scripted first-visit chat that builds the runner profile) the Plan screen (Week / Month views of a 4-week plan), the Your profile screen (change the onboarding answers, then update the plan) and the workout editor (change a planned workout's type and duration).
-Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. Plans are mock data from `generatePlan`; the workout editor can't move a workout to another day or add one on a rest day yet, and Active Run doesn't execute workout segments yet.
+Implemented today: fake auth/sign-in, Home dashboard, Stats, GPS run tracking (background location), Run results with route map, the Plan onboarding (Mike's scripted first-visit chat that builds the runner profile), the Plan screen (Week / Month views of a 4-week plan), the Your profile screen (opened from the gear on the Plan screen: change any onboarding answer, and on leaving, plan sync regenerates only the future planned, non-edited workouts) and the workout editor (opened from Edit on the workout card: a run type carousel and a draggable duration bar; saved workouts are marked `edited`).
+Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. Plans are mock data from `generatePlan`. The workout editor can't move a workout to another day or add one on a rest day yet, and Active Run doesn't execute workout segments yet.
 
 ## Commands
 - Install: `npm install`
@@ -43,19 +43,26 @@ Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. P
 
 ## Conventions
 - Follow the code style and commit requirements in @.github/copilot-instructions.md
-- Changes to `app.json` (plugins, infoPlist, permissions) require a new development build. Say so when you make one.
+- Changes to `app.json` (plugins, infoPlist, permissions) require a new development build. Say so when you make one. The switch of `runtimeVersion` to the `fingerprint` policy also needs a new development build.
 - Ask before adding a new dependency.
 
-## Final step (always do this last)
+## Final step (mandatory, every task)
 
-After the change is implemented and `npx tsc --noEmit` passes, do the following in order.
+This section applies to EVERY task that changes files in this repo, even when my message does not mention commit, push or version. Not being asked is not a reason to skip it. The only exceptions: I explicitly say "no commit" or "don't push", or the task is only a question or investigation with no file changes.
 
-### 1. Decide the version bump (semantic versioning)
+Run it once the change is implemented and `npx tsc --noEmit` passes. If verification is still incomplete or failing, do not commit: tell me what is missing and ask.
+
+### 0. Check the working tree
+Run `git status`. If there are modified files that are not part of this task, do not include them silently: list them and ask me whether to commit them (as separate commits) or leave them out.
+
+### 1. Decide the version bump (semantic versioning, X.Y.Z, each digit goes up to 99)
 The single source of truth is `expo.version` in app.json (HomeScreen reads it). Keep `version` in package.json and package-lock.json in sync with it (`npm version X.Y.Z --no-git-tag-version` updates both).
-- PATCH (x.y.Z): bug fixes, small UI tweaks, copy changes, performance fixes, no new user-facing capability.
-- MINOR (x.Y.0): a new user-facing feature, screen, flow or meaningful behavior change (e.g. GPS tracking, route map, new screen). Reset PATCH to 0.
+The default is PATCH. Most changes are patches.
+- PATCH (x.y.Z): bug fixes, small UI tweaks, copy changes, performance fixes, and improvements or additions inside an existing screen or feature (a new option, a new onboarding question, a new rule, a new component in an existing screen). If Z would pass 99, bump MINOR instead.
+- MINOR (x.Y.0): a new user-facing capability as a whole: a new screen, flow or section (e.g. GPS tracking, route map, workout editor). Reset PATCH to 0. Y can go up to 99; do not roll into MAJOR before that.
 - MAJOR (X.0.0): breaking or app-wide changes (full redesign, changed data model). Do NOT bump MAJOR on your own: stop and ask me first.
 - NO bump: docs, comments, formatting, refactors with no behavior change, tooling/config-only changes.
+One bump per task, not per commit. If a task mixes levels, use the highest. When in doubt between PATCH and MINOR, choose PATCH. Never choose MINOR just to "keep the numbers moving".
 State which level you chose and why, in one sentence, before touching any version file.
 
 ### 2. Commit (clean and easy to understand)
@@ -68,11 +75,20 @@ State which level you chose and why, in one sentence, before touching any versio
 ### 3. Push
 - Run `git push` on the current branch. Never use `--force`.
 - If the push is rejected, run `git fetch` and `git pull --rebase` once and retry. If there are conflicts, stop and tell me instead of resolving them blindly.
-- Do NOT run `eas update`; I publish previews manually.
+
+### 3b. Publish to Expo (OTA update)
+My friends test the app through Expo (branch `preview`), so updates have to be published there.
+- Publish automatically after a successful push when the task ended in a MINOR or MAJOR version bump (a big update).
+- Publish whenever I ask, whatever the bump size, with phrases like "publish", "publicá el update", "subí a Expo" or "eas update". Never publish on a PATCH or no-bump task unless I ask.
+- Before publishing: everything must be committed and pushed (changes only in `graphify-out/` don't count), and `npx tsc --noEmit` must pass.
+- Command: `eas update --branch preview --message "<subject of the latest commit>" --non-interactive`. Don't ask me for a message; reuse the latest commit subject.
+- Do NOT publish if this task changed anything native (app.json plugins, permissions, infoPlist, or a dependency with native code): an OTA update cannot deliver that. Tell me a new build is needed instead.
+- Never run `eas build`.
 
 ### 4. Report
 End with: the old and new version (or "no bump" and why), the commits created (`git log --oneline -n <count>`), the push result, and confirmation that `git status` is clean.
-If the version changed, remind me that `runtimeVersion` uses the `appVersion` policy, so `eas update` will only reach builds made with the new version.
+`runtimeVersion` uses the `fingerprint` policy, so a version bump does not affect updates; `eas update` only reaches builds whose native fingerprint matches. Remind me to make a new build only when native code changes (plugins, permissions, infoPlist, native dependencies).
+- If an update was published, include the update group ID or link from the command output.
 
 ### 5. Update
 When you add, move or remove a folder or module, update the project structure section of this file in the same change.
