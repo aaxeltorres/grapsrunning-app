@@ -1,9 +1,10 @@
 import React from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import type { RecapRow } from '../coach/conversation';
 import type { QuestionId } from '../coach/runnerProfile';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import { colors, radius, spacing, typography } from '../theme';
+import AnswerRow from './AnswerRow';
 import Button from './Button';
 
 type Props = {
@@ -50,37 +51,14 @@ function RecapCard({
 
       <View style={styles.rows}>
         {rows.map((row, index) => (
-          <Pressable
+          <AnswerRow
             key={row.questionId}
-            accessibilityRole="button"
-            accessibilityLabel={`${row.label}: ${row.value}`}
-            accessibilityHint={confirmed ? undefined : 'Change your answer'}
-            accessibilityState={{ disabled: confirmed }}
+            label={row.label}
+            value={row.value}
+            divider={index > 0}
             disabled={confirmed}
             onPress={() => onRowPress(row.questionId)}
-            style={({ pressed }) => [
-              styles.row,
-              index > 0 && styles.rowDivider,
-              pressed && styles.rowPressed,
-            ]}
-          >
-            {/* Label above the value, so lists like the training days get
-                the full width instead of wrapping mid-list. */}
-            <View style={styles.rowText}>
-              <Text style={[typography.subheadline, styles.label]}>
-                {row.label}
-              </Text>
-              <Text style={[typography.body, styles.value]}>{row.value}</Text>
-            </View>
-            {!confirmed && (
-              <Text
-                importantForAccessibility="no"
-                style={[typography.headline, styles.chevron]}
-              >
-                ›
-              </Text>
-            )}
-          </Pressable>
+          />
         ))}
       </View>
 
@@ -114,33 +92,6 @@ const styles = StyleSheet.create({
   },
   rows: {
     marginBottom: spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingVertical: spacing.xs,
-  },
-  rowDivider: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.divider,
-  },
-  rowPressed: {
-    opacity: 0.5,
-  },
-  rowText: {
-    flex: 1,
-    gap: 2,
-  },
-  label: {
-    color: colors.textSecondary,
-  },
-  value: {
-    color: colors.textPrimary,
-  },
-  chevron: {
-    color: colors.textMuted,
   },
   button: {
     alignSelf: 'stretch',

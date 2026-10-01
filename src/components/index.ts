@@ -20,3 +20,4 @@ export { default as RecapCard } from './RecapCard';
 export { default as SegmentedControl } from './SegmentedControl';
 export { default as WorkoutCard } from './WorkoutCard';
 export { default as PlanOverview } from './PlanOverview';
+export { default as AnswerRow } from './AnswerRow';
