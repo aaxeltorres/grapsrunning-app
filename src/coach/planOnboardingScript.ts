@@ -371,6 +371,7 @@ export const planDayMessages = {
   ],
   rest: 'Rest day! Recovery is when you get stronger, so put your feet up. 🛋️',
   completed: "Done and dusted. Great work, I'm proud of you! 🎉",
+  partial: "You didn't finish it all, and that's okay. You showed up, and that counts. 💙",
   skipped: "No worries about this one. We'll pick it up on the next run. 💙",
   gentle: 'Easy does it today. Stop if anything hurts, your body comes first. 💙',
   noWorkout: 'Nothing planned here. Your plan starts on the days you picked. 📅',

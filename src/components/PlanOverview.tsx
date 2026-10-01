@@ -58,6 +58,7 @@ function mikeMessageKey(
 ): PlanDayMessageKey {
   if (!workout) return 'noWorkout';
   if (workout.status === 'completed') return 'completed';
+  if (workout.status === 'partial') return 'partial';
   if (workout.status === 'skipped') return 'skipped';
   if (workout.type === 'rest') return 'rest';
   if (gentle) return 'gentle';
@@ -74,6 +75,8 @@ type Props = {
   gentle: boolean;
   reduceMotion: boolean;
   onStartWorkout: (workout: Workout) => void;
+  /** A free run, from a finished workout's "Run again freely". */
+  onRunAgain: () => void;
   /** An edited (or reset) workout, to replace the one with the same id. */
   onSaveWorkout: (workout: Workout) => void;
 };
@@ -86,6 +89,7 @@ export default function PlanOverview({
   gentle,
   reduceMotion,
   onStartWorkout,
+  onRunAgain,
   onSaveWorkout,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -109,7 +113,7 @@ export default function PlanOverview({
     selectedDate,
   );
 
-  // Only planned training days can be edited, not rest, completed or
+  // Only planned training days can be edited, not rest, finished or
   // skipped ones.
   const canEdit =
     selectedWorkout !== undefined &&
@@ -233,6 +237,7 @@ export default function PlanOverview({
                       : undefined
                   }
                   onEdit={canEdit ? openEditor : undefined}
+                  onRunAgain={onRunAgain}
                 />
               </Pulse>
 

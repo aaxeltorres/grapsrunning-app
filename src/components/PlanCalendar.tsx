@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { displayName, type Workout } from '../coach/plan';
+import { displayName, isFinished, type Workout } from '../coach/plan';
 import {
   dayOfMonth,
   formatLongDate,
@@ -17,6 +17,8 @@ import { WORKOUT_TYPE_COLORS } from './WorkoutCard';
 
 const DAY_SIZE = 36;
 const DOT_SIZE = 6;
+// Finished days: a type-colored circle with a check, in a slot as tall as the marker.
+const MARKER_SIZE = 14;
 const NAV_BUTTON_SIZE = 36;
 // Seven columns must fit on an iPhone SE, even with large text.
 const DAY_MAX_FONT_SCALE = 1.4;
@@ -40,6 +42,7 @@ function dayAccessibilityLabel(
   if (workout) {
     parts.push(displayName(workout));
     if (workout.status === 'completed') parts.push('completed');
+    if (workout.status === 'partial') parts.push('partially completed');
   }
   return parts.join('. ');
 }
@@ -79,6 +82,41 @@ function DayCircle({ date, today, selected, muted }: DayCircleProps) {
   );
 }
 
+/** A finished day: filled circle with a check (completed) or a ring (partial). */
+function FinishedMarker({
+  color,
+  partial,
+  faded,
+}: {
+  color: string;
+  partial: boolean;
+  faded?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.marker,
+        partial
+          ? { borderWidth: 1.5, borderColor: color }
+          : { backgroundColor: color },
+        faded && styles.markerFaded,
+      ]}
+    >
+      <Text
+        maxFontSizeMultiplier={1}
+        style={[styles.markerCheck, { color: partial ? color : colors.white }]}
+      >
+        ✓
+      </Text>
+    </View>
+  );
+}
+
+/** Keeps every day's marker row the same height. */
+function MarkerSlot({ children }: { children: React.ReactNode }) {
+  return <View style={styles.markerSlot}>{children}</View>;
+}
+
 function WeekdayHeader() {
   return (
     <View style={styles.row} importantForAccessibility="no-hide-descendants">
@@ -103,8 +141,8 @@ type WeekStripProps = {
 };
 
 /**
- * The seven days of the selected week. Dots: completed = green,
- * planned = outlined, rest = none.
+ * The seven days of the selected week. Markers: finished = a check in the
+ * workout color (a ring when partial), planned = outlined, rest = none.
  */
 export function PlanWeekStrip({
   selectedDate,
@@ -139,15 +177,16 @@ export function PlanWeekStrip({
                 selected={selected}
                 muted={date < today}
               />
-              <View
-                style={[
-                  styles.dot,
-                  isTraining &&
-                    (workout.status === 'completed'
-                      ? styles.doneDot
-                      : styles.plannedDot),
-                ]}
-              />
+              <MarkerSlot>
+                {workout && workout.type !== 'rest' && isFinished(workout) ? (
+                  <FinishedMarker
+                    color={WORKOUT_TYPE_COLORS[workout.type]}
+                    partial={workout.status === 'partial'}
+                  />
+                ) : (
+                  <View style={[styles.dot, isTraining && styles.plannedDot]} />
+                )}
+              </MarkerSlot>
             </Pressable>
           );
         })}
@@ -228,15 +267,25 @@ export function PlanMonthCalendar({
                   selected={selected}
                   muted={!inMonth}
                 />
-                <View
-                  style={[
-                    styles.dot,
-                    dotColor !== undefined && {
-                      backgroundColor: dotColor,
-                      opacity: inMonth ? 1 : 0.4,
-                    },
-                  ]}
-                />
+                <MarkerSlot>
+                  {dotColor !== undefined && workout && isFinished(workout) ? (
+                    <FinishedMarker
+                      color={dotColor}
+                      partial={workout.status === 'partial'}
+                      faded={!inMonth}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.dot,
+                        dotColor !== undefined && {
+                          backgroundColor: dotColor,
+                          opacity: inMonth ? 1 : 0.4,
+                        },
+                      ]}
+                    />
+                  )}
+                </MarkerSlot>
               </Pressable>
             );
           })}
@@ -261,6 +310,10 @@ export function PlanMonthCalendar({
             </Text>
           </View>
         ))}
+        <View style={styles.legendItem}>
+          <FinishedMarker color={colors.textSecondary} partial={false} />
+          <Text style={[typography.caption, styles.legendText]}>Done</Text>
+        </View>
       </View>
     </View>
   );
@@ -343,8 +396,25 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.textMuted,
   },
-  doneDot: {
-    backgroundColor: colors.success,
+  markerSlot: {
+    height: MARKER_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  marker: {
+    width: MARKER_SIZE,
+    height: MARKER_SIZE,
+    borderRadius: MARKER_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markerFaded: {
+    opacity: 0.4,
+  },
+  markerCheck: {
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
   },
   monthHeader: {
     flexDirection: 'row',

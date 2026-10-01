@@ -100,6 +100,13 @@ export default function PlanScreen({ navigation }: Props) {
     [navigation],
   );
 
+  // "Run again freely" on a finished workout: a quick run that leaves the
+  // workout's result as it is.
+  const handleRunAgain = useCallback(
+    () => navigation.navigate('ActiveRun', { mode: 'quick' }),
+    [navigation],
+  );
+
   const chatExitStyle = {
     opacity: chatExit.interpolate({
       inputRange: [0, 1],
@@ -154,6 +161,7 @@ export default function PlanScreen({ navigation }: Props) {
               gentle={profile.injuryStatus === 'hurts_now'}
               reduceMotion={reduceMotion}
               onStartWorkout={handleStartWorkout}
+              onRunAgain={handleRunAgain}
               onSaveWorkout={handleSaveWorkout}
             />
           </EnterView>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   displayName,
+  isFinished,
   keyPace,
   segmentBarParts,
   totalDistance,
@@ -11,6 +12,7 @@ import {
   type Workout,
   type WorkoutType,
 } from '../coach/plan';
+import { workoutActuals } from '../run/planResult';
 import { formatDayLabel, type ISODate } from '../utils/dates';
 import { formatPaceSeconds } from '../utils/format';
 import { colors, radius, spacing, typography } from '../theme';
@@ -72,6 +74,8 @@ type Props = {
   onStart?: () => void;
   /** Opens the editor. Left out when the workout can't be edited. */
   onEdit?: () => void;
+  /** A finished workout's option to go for a free run instead. */
+  onRunAgain?: () => void;
 };
 
 /**
@@ -84,6 +88,7 @@ export default function WorkoutCard({
   workout,
   onStart,
   onEdit,
+  onRunAgain,
 }: Props) {
   const heading = dayHeading(date, today, workout);
 
@@ -106,8 +111,11 @@ export default function WorkoutCard({
   }
 
   const pace = keyPace(workout);
-  const isDone = workout.status === 'completed';
+  const isDone = isFinished(workout);
+  const isPartial = workout.status === 'partial';
   const isSkipped = workout.status === 'skipped';
+  // A finished workout shows what was run; old records show the plan.
+  const actual = isDone ? workoutActuals(workout) : null;
 
   return (
     <View style={[styles.card, styles.workoutCard]}>
@@ -121,7 +129,7 @@ export default function WorkoutCard({
             ]}
           >
             <Text style={[typography.caption, styles.statusText]}>
-              {isDone ? 'Completed ✓' : 'Skipped'}
+              {isPartial ? 'Partial' : isDone ? 'Completed ✓' : 'Skipped'}
             </Text>
           </View>
         )}
@@ -136,17 +144,61 @@ export default function WorkoutCard({
       </Text>
 
       <View style={styles.metrics}>
-        <Metric value={formatKm(totalDistance(workout))} label="distance" />
-        <Metric value={formatMinutes(totalDuration(workout))} label="time" />
-        {pace !== null && (
+        <Metric
+          value={formatKm(actual ? actual.distanceMeters : totalDistance(workout))}
+          label="distance"
+        />
+        <Metric
+          value={formatMinutes(
+            actual ? actual.durationSeconds : totalDuration(workout),
+          )}
+          label="time"
+        />
+        {actual ? (
           <Metric
-            value={formatPace(pace)}
-            label={workout.type === 'intervals' ? 'fast pace /km' : 'pace /km'}
+            value={formatPaceSeconds(actual.avgPaceSecPerKm)}
+            label="avg pace /km"
           />
+        ) : (
+          pace !== null && (
+            <Metric
+              value={formatPace(pace)}
+              label={workout.type === 'intervals' ? 'fast pace /km' : 'pace /km'}
+            />
+          )
         )}
       </View>
 
+      {isPartial && (
+        <Text style={[typography.subheadline, styles.plannedLine]}>
+          {`Planned ${formatKm(totalDistance(workout))} · ${formatMinutes(
+            totalDuration(workout),
+          )}`}
+        </Text>
+      )}
+
       <SegmentBar workout={workout} />
+
+      {isDone && (
+        <View style={styles.doneRow}>
+          <Text style={[typography.subheadline, styles.doneText]}>
+            {isPartial ? 'Every step counts.' : 'Nice work.'}
+          </Text>
+          {onRunAgain && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityHint="Starts a free run"
+              hitSlop={8}
+              onPress={onRunAgain}
+              style={({ pressed }) => pressed && styles.pressed}
+            >
+              <Text style={[typography.subheadline, styles.runAgain]}>
+                Run again freely ›
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {!isDone && (
         <View style={styles.actions}>
@@ -239,6 +291,16 @@ type SummaryProps = {
   onPress?: () => void;
 };
 
+/** "5.0 km · 35 min", with what was run and its state once finished. */
+function summaryDetails(workout: Workout) {
+  const done = isFinished(workout) ? workoutActuals(workout) : null;
+  const numbers = `${formatKm(done ? done.distanceMeters : totalDistance(workout))} · ${formatMinutes(
+    done ? done.durationSeconds : totalDuration(workout),
+  )}`;
+  if (!done) return numbers;
+  return `${numbers} · ${workout.status === 'partial' ? 'Partial' : 'Completed ✓'}`;
+}
+
 /** Compact summary under the month calendar. Tapping opens the day. */
 export function WorkoutSummaryCard({
   date,
@@ -279,9 +341,7 @@ export function WorkoutSummaryCard({
       <Text style={[typography.headline, styles.title]}>{title}</Text>
       {isTraining && (
         <Text style={[typography.subheadline, styles.metricLabel]}>
-          {`${formatKm(totalDistance(workout))} · ${formatMinutes(
-            totalDuration(workout),
-          )}`}
+          {summaryDetails(workout)}
         </Text>
       )}
     </Pressable>
@@ -383,6 +443,23 @@ const styles = StyleSheet.create({
   },
   barLabelEnd: {
     textAlign: 'right',
+  },
+  plannedLine: {
+    color: colors.textSecondary,
+  },
+  doneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  doneText: {
+    color: colors.textSecondary,
+  },
+  runAgain: {
+    color: colors.iosBlue,
+    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
