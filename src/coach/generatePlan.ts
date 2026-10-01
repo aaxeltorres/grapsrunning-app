@@ -37,7 +37,7 @@ const BEGINNER_FIRST_LONG_WEEK = 2;
 // ...and it grows about 10% a week from their regular run/walk session.
 const BEGINNER_LONG_GROWTH = 1.1;
 const BEGINNER_RUN_WALK_REPS = 6;
-const WALK_BREAK_SECONDS = 120;
+export const WALK_BREAK_SECONDS = 120;
 
 /** Easy pace (seconds per km) by level. */
 const EASY_PACE: Record<LevelId, number> = {
@@ -86,14 +86,14 @@ const LONG_RUN_FACTOR: Record<GoalFocus, number> = {
 };
 
 /** Interval rep distance (m) and how much faster than easy pace. */
-const INTERVALS: Record<GoalFocus, { meters: number; fasterBy: number }> = {
+export const INTERVALS: Record<GoalFocus, { meters: number; fasterBy: number }> = {
   '5k': { meters: 400, fasterBy: 75 },
   '10k': { meters: 800, fasterBy: 60 },
   distance: { meters: 1000, fasterBy: 45 },
   general: { meters: 400, fasterBy: 60 },
 };
 
-type Rules = {
+export type Rules = {
   level: LevelId;
   focus: GoalFocus;
   beginner: boolean;
@@ -104,7 +104,7 @@ type Rules = {
   easyPace: number;
 };
 
-function rulesFor(profile: RunnerProfile): Rules {
+export function rulesFor(profile: RunnerProfile): Rules {
   const level = profile.level ?? 'not_running';
   const beginner = isBeginnerLevel(level);
   const gentle = profile.injuryStatus === 'hurts_now';
@@ -199,16 +199,16 @@ function weekTypes(
   return types;
 }
 
-const round5 = (n: number) => Math.round(n / 5) * 5;
+export const round5 = (n: number) => Math.round(n / 5) * 5;
 const roundHalfKm = (km: number) => Math.max(1, Math.round(km * 2) / 2);
-const minutes = (n: number) => Math.round(n) * 60;
+export const minutes = (n: number) => Math.round(n) * 60;
 
-function paceRange(center: number, below: number, above: number): Pace {
+export function paceRange(center: number, below: number, above: number): Pace {
   return { min: round5(center - below), max: round5(center + above) };
 }
 
 /** Builds steps with ids derived from the workout id. */
-function stepFactory(workoutId: string) {
+export function stepFactory(workoutId: string) {
   let n = 0;
   const nextId = () => `${workoutId}-${++n}`;
   return {
@@ -225,16 +225,45 @@ function stepFactory(workoutId: string) {
   };
 }
 
-const distance = (km: number): StepTarget => ({
+export const distance = (km: number): StepTarget => ({
   type: 'distance',
   meters: km * 1000,
 });
-const duration = (seconds: number): StepTarget => ({
+export const duration = (seconds: number): StepTarget => ({
   type: 'duration',
   seconds,
 });
 
-function buildSegments(
+/** Interval repetitions in a generated session (more for stronger runners). */
+export function defaultIntervalReps(level: LevelId, week: number) {
+  const base = level === 'run_10k_plus' ? 7 : level === 'run_5k' ? 6 : 5;
+  return base + (week === 1 || week === 2 ? 1 : 0);
+}
+
+/** Default run/walk repetitions in a generated session. */
+export const DEFAULT_RUN_WALK_REPS = BEGINNER_RUN_WALK_REPS;
+
+/**
+ * Length of one running bout in a run/walk session, in seconds. Bouts
+ * grow week by week; a long run's bouts are about 10% longer than the
+ * first long-run week's regular session, and grow about 10% a week.
+ */
+export function runWalkBoutSeconds(
+  level: LevelId,
+  week: number,
+  type: WorkoutType,
+): number {
+  const runSecondsByWeek =
+    level === 'not_running' ? [60, 90, 120, 90] : [120, 150, 180, 150];
+  if (type !== 'long') return runSecondsByWeek[week] ?? runSecondsByWeek[3];
+
+  const baseRun = runSecondsByWeek[BEGINNER_FIRST_LONG_WEEK];
+  const growth = BEGINNER_LONG_GROWTH ** (week - BEGINNER_FIRST_LONG_WEEK + 1);
+  const repSeconds = (baseRun + WALK_BREAK_SECONDS) * growth;
+  return round5(repSeconds - WALK_BREAK_SECONDS);
+}
+
+export function buildSegments(
   workoutId: string,
   type: WorkoutType,
   rules: Rules,
@@ -250,9 +279,7 @@ function buildSegments(
   if (type === 'intervals') {
     const { meters, fasterBy } = INTERVALS[rules.focus];
     const fastPace = round5(rules.easyPace - fasterBy);
-    const reps =
-      (rules.level === 'run_10k_plus' ? 7 : rules.level === 'run_5k' ? 6 : 5) +
-      (week === 1 || week === 2 ? 1 : 0);
+    const reps = defaultIntervalReps(rules.level, week);
     return [
       step('warmup', duration(minutes(10)), warm),
       repeat(reps, [
@@ -265,19 +292,8 @@ function buildSegments(
 
   if (rules.beginner) {
     // Run/walk: running bouts grow week by week.
-    const runSecondsByWeek =
-      rules.level === 'not_running' ? [60, 90, 120, 90] : [120, 150, 180, 150];
-    let runSeconds = runSecondsByWeek[week];
+    const runSeconds = runWalkBoutSeconds(rules.level, week, type);
     const reps = BEGINNER_RUN_WALK_REPS - (rules.gentle ? 2 : 0);
-    if (type === 'long') {
-      // About 10% longer than the first long-run week's regular session,
-      // then about 10% more each week, even in the lighter last week.
-      const baseRun = runSecondsByWeek[BEGINNER_FIRST_LONG_WEEK];
-      const growth =
-        BEGINNER_LONG_GROWTH ** (week - BEGINNER_FIRST_LONG_WEEK + 1);
-      const repSeconds = (baseRun + WALK_BREAK_SECONDS) * growth;
-      runSeconds = round5(repSeconds - WALK_BREAK_SECONDS);
-    }
     return [
       step('warmup', duration(minutes(5)), null),
       repeat(reps, [
