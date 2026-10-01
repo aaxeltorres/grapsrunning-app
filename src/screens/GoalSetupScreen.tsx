@@ -120,6 +120,7 @@ export default function GoalSetupScreen({ navigation }: Props) {
       <TopBar title="Set a goal" onBack={() => navigation.goBack()} right={null} />
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -174,7 +175,9 @@ export default function GoalSetupScreen({ navigation }: Props) {
             </Pressable>
           );
         })}
+      </ScrollView>
 
+      <View style={styles.footer}>
         {messages.length > 0 && (
           <View style={styles.issues} accessibilityLiveRegion="polite">
             {messages.map((text) => (
@@ -196,9 +199,6 @@ export default function GoalSetupScreen({ navigation }: Props) {
             )}
           </View>
         )}
-      </ScrollView>
-
-      <View style={styles.footer}>
         <Button
           label="Start goal run"
           variant="accent"
@@ -224,6 +224,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  // Only the cards scroll. `minHeight: 0` lets it shrink below its content
+  // on web, so the footer below is never pushed off or drawn over.
+  scroll: {
+    flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
@@ -283,9 +289,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
+  // The message, its fixes and Start stay in view on any screen height.
   footer: {
+    flexShrink: 0,
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
+    backgroundColor: colors.background,
   },
 });
