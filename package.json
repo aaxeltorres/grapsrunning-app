@@ -1,6 +1,6 @@
 {
   "name": "graps-running",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "main": "node_modules/expo/AppEntry.js",
   "private": true,
   "scripts": {
