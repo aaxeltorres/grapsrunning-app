@@ -25,6 +25,7 @@ import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import {
   addMonths,
   formatDayLabel,
+  isSameMonth,
   startOfMonth,
   type ISODate,
 } from '../utils/dates';
@@ -81,7 +82,9 @@ export default function PlanOverview({
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<PlanView>('week');
   const [selectedDate, setSelectedDate] = useState(today);
-  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(today));
+  // The month view always shows the selected day's month, so the card
+  // under the grid always matches what the grid shows.
+  const visibleMonth = startOfMonth(selectedDate);
 
   const workoutsByDate = useMemo(
     () => new Map(plan.workouts.map((workout) => [workout.date, workout])),
@@ -94,11 +97,19 @@ export default function PlanOverview({
   const selectedWorkout = workoutFor(selectedDate);
   const messageKey = mikeMessageKey(selectedWorkout, gentle);
 
-  // Selecting from the week view or the list also moves the month view.
-  const selectDate = useCallback((date: ISODate) => {
-    setSelectedDate(date);
-    setVisibleMonth(startOfMonth(date));
-  }, []);
+  // Another month never contains the selection, so moving to it selects
+  // its first workout (or its first day when nothing is planned there).
+  const changeMonth = useCallback(
+    (delta: -1 | 1) => {
+      const month = addMonths(visibleMonth, delta);
+      const firstWorkout = plan.workouts.find(
+        (workout) =>
+          isSameMonth(workout.date, month) && workout.type !== 'rest',
+      );
+      setSelectedDate(firstWorkout?.date ?? month);
+    },
+    [plan, visibleMonth],
+  );
 
   const comingUp = upcomingWorkouts(
     plan,
@@ -129,7 +140,7 @@ export default function PlanOverview({
               selectedDate={selectedDate}
               today={today}
               workoutFor={workoutFor}
-              onSelect={selectDate}
+              onSelect={setSelectedDate}
             />
 
             <View style={styles.mikeRow}>
@@ -171,7 +182,7 @@ export default function PlanOverview({
                     key={workout.id}
                     workout={workout}
                     showDivider={index > 0}
-                    onPress={() => selectDate(workout.date)}
+                    onPress={() => setSelectedDate(workout.date)}
                   />
                 ))}
               </View>
@@ -185,18 +196,13 @@ export default function PlanOverview({
               today={today}
               workoutFor={workoutFor}
               onSelect={setSelectedDate}
-              onChangeMonth={(delta) =>
-                setVisibleMonth((month) => addMonths(month, delta))
-              }
+              onChangeMonth={changeMonth}
             />
             <WorkoutSummaryCard
               date={selectedDate}
               today={today}
               workout={selectedWorkout}
-              onPress={() => {
-                selectDate(selectedDate);
-                setView('week');
-              }}
+              onPress={() => setView('week')}
             />
           </View>
         )}
