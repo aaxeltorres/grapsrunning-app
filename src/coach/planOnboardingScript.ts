@@ -1,3 +1,4 @@
+import { isBeginnerLevel } from './runnerProfile';
 import type { ChatScriptStep } from './types';
 
 /**
@@ -123,6 +124,31 @@ export const planOnboardingScript: ChatScriptStep[] = [
         "Impressive! 🔥 You've got a strong engine, so we can train with real ambition.",
     },
     defaultReaction: 'Thanks! That helps me pick the right starting point.',
+  },
+
+  {
+    type: 'choice',
+    id: 'speedWork',
+    input: 'cards',
+    // Beginners build a base first: no intervals for them.
+    askIf: (profile) =>
+      profile.level !== undefined && !isBeginnerLevel(profile.level),
+    text: 'Want some speed work (intervals) in your plan?',
+    sheetTitle: 'Speed work',
+    recapLabel: 'Speed work',
+    options: [
+      { id: 'yes', label: 'Yes, add them' },
+      { id: 'no', label: 'No, keep it easy' },
+      // Stored as no intervals; easy to change later.
+      { id: 'not_sure', label: 'Not sure' },
+    ],
+    reactions: {
+      yes: "Love it! ⚡ I'll add some fast sessions, always with easy days around them.",
+      no: "Easy it is! Steady runs build a great engine. 😊",
+      not_sure:
+        "No problem! I'll keep it easy for now, and we can add speed work anytime.",
+    },
+    defaultReaction: 'Got it, thanks!',
   },
 
   {

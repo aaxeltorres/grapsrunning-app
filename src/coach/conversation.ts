@@ -6,7 +6,11 @@
  * can never be duplicated.
  */
 
-import type { QuestionId, RunnerProfile } from './runnerProfile';
+import {
+  withDerivedFields,
+  type QuestionId,
+  type RunnerProfile,
+} from './runnerProfile';
 import type {
   AnswerValue,
   ChatScriptStep,
@@ -282,5 +286,5 @@ export function withAnswer(
     }
   }
 
-  return next;
+  return withDerivedFields(next);
 }

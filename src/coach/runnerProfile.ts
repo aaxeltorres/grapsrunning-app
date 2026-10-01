@@ -28,6 +28,15 @@ export type LevelId =
   | 'run_5k'
   | 'run_10k_plus';
 
+/** Levels that build up with run/walk; they get no speed work. */
+const BEGINNER_LEVELS: readonly LevelId[] = ['not_running', 'run_walk'];
+
+export function isBeginnerLevel(level: LevelId) {
+  return BEGINNER_LEVELS.includes(level);
+}
+
+export type SpeedWorkId = 'yes' | 'no' | 'not_sure';
+
 export type DayId = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export type InjuryId =
@@ -47,6 +56,8 @@ export type InjuryStatusId = 'recovered' | 'sometimes_bothers' | 'hurts_now';
 export type RunnerAnswers = {
   goal: GoalId;
   level: LevelId;
+  /** Only asked past the beginner levels. Drives `includeIntervals`. */
+  speedWork: SpeedWorkId;
   availableDays: DayId[];
   age: number;
   heightCm: number;
@@ -62,10 +73,20 @@ export const RUNNER_PROFILE_SCHEMA_VERSION = 1;
 
 export type RunnerProfile = Partial<RunnerAnswers> & {
   schemaVersion: typeof RUNNER_PROFILE_SCHEMA_VERSION;
+  /**
+   * Interval sessions in the plan. Derived from `speedWork` ("Not sure"
+   * counts as no); missing means false.
+   */
+  includeIntervals?: boolean;
   /** ISO timestamp of the last save. */
   updatedAt?: string;
 };
 
 export function createEmptyProfile(): RunnerProfile {
-  return { schemaVersion: RUNNER_PROFILE_SCHEMA_VERSION };
+  return { schemaVersion: RUNNER_PROFILE_SCHEMA_VERSION, includeIntervals: false };
+}
+
+/** Recomputes the fields derived from answers. Call after any change. */
+export function withDerivedFields(profile: RunnerProfile): RunnerProfile {
+  return { ...profile, includeIntervals: profile.speedWork === 'yes' };
 }
