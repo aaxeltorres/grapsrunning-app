@@ -3,7 +3,7 @@
  * this is the single place to rename them.
  */
 
-export type RunModeId = 'quick' | 'goal' | 'plan';
+export type RunModeId = 'quick' | 'goal' | 'plan' | 'intervals';
 
 export type RunMode = {
   id: RunModeId;
@@ -26,6 +26,11 @@ export const RUN_MODES: Record<RunModeId, RunMode> = {
     id: 'plan',
     name: "Today's workout",
     description: 'Follow the workout from your plan.',
+  },
+  intervals: {
+    id: 'intervals',
+    name: 'Intervals',
+    description: 'Build your own reps and sets.',
   },
 };
 

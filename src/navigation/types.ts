@@ -22,9 +22,11 @@ export type RootStackParamList = {
   Routes: undefined;
   RunMode: undefined;
   GoalSetup: undefined;
+  IntervalSetup: undefined;
   /**
    * No params (or no mode) starts a quick run. `goal` is for goal runs,
-   * `workout` for plan workout runs.
+   * `workout` for plan workout runs and for the interval workout the
+   * runner built (a free run: it is not part of the Plan).
    */
   ActiveRun: { mode?: RunModeId; goal?: RunGoal; workout?: Workout } | undefined;
   RunResults: {
@@ -40,7 +42,7 @@ export type RootStackParamList = {
     splits?: Split[];
     /** Set when the run was a plan workout: what was planned, to compare. */
     planned?: { workout: Workout; partial: boolean };
-    /** Plan workouts with reps: every work step as it was run. */
+    /** Workouts with reps (plan or intervals): every work step as it was run. */
     reps?: RepResult[];
   };
 };

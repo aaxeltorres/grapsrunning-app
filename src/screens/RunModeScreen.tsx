@@ -45,7 +45,8 @@ function messageKey(state: TodayRunState): RunModeMessageKey {
 
 /**
  * Run mode selector, opened from "Start run" on Home. Quick start begins a
- * run, Set a goal opens the goal setup, and Today's workout runs the plan's
+ * run, Set a goal opens the goal setup, Intervals opens the setup to build
+ * your own reps and sets, and Today's workout runs the plan's
  * workout for today (the same flow as Start workout on the Plan). Without
  * a workout waiting, a sheet explains why and offers a quick run.
  */
@@ -90,6 +91,10 @@ export default function RunModeScreen({ navigation }: Props) {
       navigation.navigate('GoalSetup');
       return;
     }
+    if (mode === 'intervals') {
+      navigation.navigate('IntervalSetup');
+      return;
+    }
     if (state.kind === 'planned') {
       startWorkout(state.workout);
       return;
@@ -125,6 +130,7 @@ export default function RunModeScreen({ navigation }: Props) {
           <ModeCard mode="quick" onPress={() => handleSelect('quick')} />
           {!highlighted && planCard}
           <ModeCard mode="goal" onPress={() => handleSelect('goal')} />
+          <ModeCard mode="intervals" onPress={() => handleSelect('intervals')} />
         </Animated.View>
       </ScrollView>
 

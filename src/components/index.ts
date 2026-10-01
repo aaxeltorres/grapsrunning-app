@@ -38,3 +38,5 @@ export { default as WorkoutProgressBar } from './WorkoutProgressBar';
 export { default as ZoneGuideSheet } from './ZoneGuideSheet';
 export { default as RepResultsSection } from './RepResultsSection';
 export { default as ZoneTimeline } from './ZoneTimeline';
+export { default as IntervalBlockCard } from './IntervalBlockCard';
+export { default as IntervalPickerSheet } from './IntervalPickerSheet';

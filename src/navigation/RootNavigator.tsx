@@ -10,6 +10,7 @@ import {
   PlaceholderScreen,
   RunModeScreen,
   GoalSetupScreen,
+  IntervalSetupScreen,
   ActiveRunScreen,
   RunResultsScreen,
   PlanScreen,
@@ -54,6 +55,11 @@ export default function RootNavigator() {
         <Stack.Screen
           name="GoalSetup"
           component={GoalSetupScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="IntervalSetup"
+          component={IntervalSetupScreen}
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
