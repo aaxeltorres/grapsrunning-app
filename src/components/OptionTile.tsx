@@ -65,7 +65,7 @@ export default function OptionTile({
           style={[
             typography.headline,
             styles.label,
-            isSquare && styles.squareLabel,
+            isSquare ? styles.squareLabel : styles.rowLabel,
             selected && styles.selectedLabel,
           ]}
         >
@@ -109,11 +109,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.iosGreen,
   },
   label: {
-    flex: 1,
     color: colors.textPrimary,
   },
+  rowLabel: {
+    flex: 1,
+  },
+  // No flex here: in a column a flex basis of 0 collapses the text to
+  // zero height, which hid the day names.
   squareLabel: {
-    flex: 0,
     textAlign: 'center',
   },
   selectedLabel: {

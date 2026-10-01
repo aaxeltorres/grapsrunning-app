@@ -64,10 +64,14 @@ function RecapCard({
               pressed && styles.rowPressed,
             ]}
           >
-            <Text style={[typography.subheadline, styles.label]}>
-              {row.label}
-            </Text>
-            <Text style={[typography.body, styles.value]}>{row.value}</Text>
+            {/* Label above the value, so lists like the training days get
+                the full width instead of wrapping mid-list. */}
+            <View style={styles.rowText}>
+              <Text style={[typography.subheadline, styles.label]}>
+                {row.label}
+              </Text>
+              <Text style={[typography.body, styles.value]}>{row.value}</Text>
+            </View>
             {!confirmed && (
               <Text
                 importantForAccessibility="no"
@@ -82,6 +86,7 @@ function RecapCard({
 
       <Button
         label={confirmLabel}
+        variant="accent"
         onPress={onConfirm}
         disabled={confirmed || !canConfirm}
         style={styles.button}
@@ -124,15 +129,15 @@ const styles = StyleSheet.create({
   rowPressed: {
     opacity: 0.5,
   },
+  rowText: {
+    flex: 1,
+    gap: 2,
+  },
   label: {
     color: colors.textSecondary,
-    flexShrink: 0,
-    maxWidth: '45%',
   },
   value: {
-    flex: 1,
     color: colors.textPrimary,
-    textAlign: 'right',
   },
   chevron: {
     color: colors.textMuted,

@@ -143,7 +143,10 @@ export default function Button({
       {loading ? (
         <ActivityIndicator color={variant === 'primary' || variant === 'accent' ? colors.white : themedLabelColors[appearance]} />
       ) : (
-        <Animated.Text style={[typography.headline, { color: labelColor }]}>
+        <Animated.Text
+          numberOfLines={1}
+          style={[typography.headline, styles.label, { color: labelColor }]}
+        >
           {label}
         </Animated.Text>
       )}
@@ -160,6 +163,10 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
+  },
+  // Buttons have a fixed height: never wrap the label onto a second line.
+  label: {
+    flexShrink: 1,
   },
   pressed: {
     opacity: 0.85,
