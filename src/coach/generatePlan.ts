@@ -10,7 +10,13 @@ import {
   type WorkoutStep,
   type WorkoutType,
 } from './plan';
-import type { DayId, GoalId, LevelId, RunnerProfile } from './runnerProfile';
+import {
+  isBeginnerLevel,
+  type DayId,
+  type GoalId,
+  type LevelId,
+  type RunnerProfile,
+} from './runnerProfile';
 
 /**
  * Training plan generation. MOCK: a deterministic rule-based plan built
@@ -26,6 +32,12 @@ const MAX_TRAINING_DAYS = 6;
 // Weeks 1-3 build up; week 4 is lighter to absorb the work.
 const WEEK_LOAD = [1, 1.1, 1.2, 0.85];
 const GENTLE_LOAD = 0.7;
+// Beginners (run/walk) get their first long run in week 3 (index 2)...
+const BEGINNER_FIRST_LONG_WEEK = 2;
+// ...and it grows about 10% a week from their regular run/walk session.
+const BEGINNER_LONG_GROWTH = 1.1;
+const BEGINNER_RUN_WALK_REPS = 6;
+const WALK_BREAK_SECONDS = 120;
 
 /** Easy pace (seconds per km) by level. */
 const EASY_PACE: Record<LevelId, number> = {
@@ -87,16 +99,21 @@ type Rules = {
   beginner: boolean;
   /** An injury hurts now: easy sessions only, shorter. */
   gentle: boolean;
+  /** Interval sessions may appear (opted in, past the beginner levels). */
+  intervals: boolean;
   easyPace: number;
 };
 
 function rulesFor(profile: RunnerProfile): Rules {
   const level = profile.level ?? 'not_running';
+  const beginner = isBeginnerLevel(level);
+  const gentle = profile.injuryStatus === 'hurts_now';
   return {
     level,
     focus: GOAL_FOCUS[profile.goal ?? 'not_sure'],
-    beginner: level === 'not_running' || level === 'run_walk',
-    gentle: profile.injuryStatus === 'hurts_now',
+    beginner,
+    gentle,
+    intervals: profile.includeIntervals === true && !beginner && !gentle,
     easyPace: EASY_PACE[level],
   };
 }
@@ -111,21 +128,73 @@ function trainingDays(profile: RunnerProfile): DayId[] {
   );
 }
 
-function intervalsAllowed(rules: Rules, week: number) {
-  if (rules.gentle) return false;
-  // Beginners build a base first.
-  if (rules.beginner) return week >= 2;
+function intervalsThisWeek(rules: Rules, week: number) {
+  if (!rules.intervals) return false;
   // General-fitness goals get intervals every other week.
   return rules.focus === 'general' ? week % 2 === 1 : true;
 }
 
-/** Session types for one week, in day order. */
-function weekTypes(count: number, rules: Rules, week: number): WorkoutType[] {
-  const types: WorkoutType[] = Array.from({ length: count }, () => 'easy');
-  if (rules.gentle) return types;
-  if (count >= 2) types[count - 1] = 'long';
-  if (count >= 2 && intervalsAllowed(rules, week)) {
-    types[count >= 3 ? 1 : 0] = 'intervals';
+function longRunThisWeek(rules: Rules, week: number) {
+  if (rules.gentle) return false;
+  return !rules.beginner || week >= BEGINNER_FIRST_LONG_WEEK;
+}
+
+/** Calendar days between two weekdays, wrapping across weeks (0-3). */
+function dayDistance(a: DayId, b: DayId) {
+  const diff = Math.abs(DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
+  return Math.min(diff, 7 - diff);
+}
+
+function previousDay(day: DayId): DayId {
+  return DAY_ORDER[(DAY_ORDER.indexOf(day) + 6) % 7];
+}
+
+/**
+ * The long run day: the last training day that follows a rest day, so it
+ * starts fresh. There is always one, as every week keeps a rest day.
+ */
+function longRunDay(days: DayId[]): DayId {
+  const afterRest = days.filter((day) => !days.includes(previousDay(day)));
+  return afterRest[afterRest.length - 1] ?? days[days.length - 1];
+}
+
+/**
+ * The interval day: as far as possible from the long run, and never next
+ * to it (the plan repeats weekly, so Sunday and Monday are neighbors).
+ * `undefined` when every other day touches the long run.
+ */
+function intervalDay(days: DayId[], longDay: DayId | undefined) {
+  let best: DayId | undefined;
+  let bestDistance = 1;
+  for (const day of days) {
+    const distance = longDay === undefined ? 7 : dayDistance(day, longDay);
+    if (distance > bestDistance) {
+      best = day;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Session type per training day for one week. Demanding sessions (long
+ * run, intervals) never fall on consecutive days; everything else is easy.
+ */
+function weekTypes(
+  days: DayId[],
+  rules: Rules,
+  week: number,
+): Map<DayId, WorkoutType> {
+  const types = new Map<DayId, WorkoutType>(days.map((day) => [day, 'easy']));
+  const longDay =
+    days.length >= 2 && longRunThisWeek(rules, week)
+      ? longRunDay(days)
+      : undefined;
+  if (longDay) types.set(longDay, 'long');
+
+  if (days.length >= 2 && intervalsThisWeek(rules, week)) {
+    const day = intervalDay(days, longDay);
+    if (day) types.set(day, 'intervals');
   }
   return types;
 }
@@ -179,17 +248,6 @@ function buildSegments(
   if (type === 'rest') return [];
 
   if (type === 'intervals') {
-    if (rules.beginner) {
-      // Short strides with walking breaks.
-      return [
-        step('warmup', duration(minutes(8)), null),
-        repeat(6, [
-          step('work', duration(30), round5(rules.easyPace - 45)),
-          step('recovery', duration(90), null),
-        ]),
-        step('cooldown', duration(minutes(5)), null),
-      ];
-    }
     const { meters, fasterBy } = INTERVALS[rules.focus];
     const fastPace = round5(rules.easyPace - fasterBy);
     const reps =
@@ -209,14 +267,22 @@ function buildSegments(
     // Run/walk: running bouts grow week by week.
     const runSecondsByWeek =
       rules.level === 'not_running' ? [60, 90, 120, 90] : [120, 150, 180, 150];
-    const runSeconds = runSecondsByWeek[week];
-    const baseReps = type === 'long' ? 8 : 6;
-    const reps = Math.max(3, baseReps - (rules.gentle ? 2 : 0));
+    let runSeconds = runSecondsByWeek[week];
+    const reps = BEGINNER_RUN_WALK_REPS - (rules.gentle ? 2 : 0);
+    if (type === 'long') {
+      // About 10% longer than the first long-run week's regular session,
+      // then about 10% more each week, even in the lighter last week.
+      const baseRun = runSecondsByWeek[BEGINNER_FIRST_LONG_WEEK];
+      const growth =
+        BEGINNER_LONG_GROWTH ** (week - BEGINNER_FIRST_LONG_WEEK + 1);
+      const repSeconds = (baseRun + WALK_BREAK_SECONDS) * growth;
+      runSeconds = round5(repSeconds - WALK_BREAK_SECONDS);
+    }
     return [
       step('warmup', duration(minutes(5)), null),
       repeat(reps, [
         step('steady', duration(runSeconds), easy),
-        step('recovery', duration(minutes(2)), null),
+        step('recovery', duration(WALK_BREAK_SECONDS), null),
       ]),
       step('cooldown', duration(minutes(5)), null),
     ];
@@ -248,13 +314,12 @@ export function buildMockPlan(
   const workouts: Workout[] = [];
 
   for (let week = 0; week < PLAN_WEEKS; week += 1) {
-    const types = weekTypes(days.length, rules, week);
+    const types = weekTypes(days, rules, week);
     DAY_ORDER.forEach((day, dayIndex) => {
       const date = addDays(startDate, week * 7 + dayIndex);
       if (date < today) return;
 
-      const sessionIndex = days.indexOf(day);
-      const type = sessionIndex === -1 ? 'rest' : types[sessionIndex];
+      const type = types.get(day) ?? 'rest';
       const id = `w-${date}`;
       workouts.push({
         id,
@@ -283,7 +348,10 @@ export function buildMockPlan(
  * TODO(ai-coach): replace the mock with a call to the backend AI coach
  * (grapsrunning-backend), sending the profile as-is and validating the
  * returned JSON against the `Plan` type. Injuries and `injuryStatus`
- * must be respected there: 'hurts_now' keeps the plan gentle.
+ * must be respected there: 'hurts_now' keeps the plan gentle. The same
+ * rules as the mock apply: no demanding sessions on consecutive days,
+ * no intervals unless `includeIntervals` (and never for beginners), and
+ * beginners' first long run in week 3.
  */
 export async function generatePlan(
   profile: RunnerProfile,
