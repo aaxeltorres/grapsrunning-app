@@ -3,6 +3,8 @@
  * one sample per tracking tick, it advances segments by time or distance
  * and returns the events that happened. Samples are on moving time, so a
  * pause (no samples, frozen clock) simply freezes the current segment.
+ * Manual segments (a short sprint, a full recovery) never end on their
+ * own: `confirmSegment` ends them when the runner taps Done or Ready.
  */
 
 import type { RunSegment } from './workoutSegments';
@@ -93,6 +95,7 @@ function between(a: WorkoutSample, b: WorkoutSample, share: number): WorkoutSamp
  */
 function segmentEnd(state: EngineState, sample: WorkoutSample): WorkoutSample | null {
   const segment = state.segments[state.index];
+  if (segment.target.type === 'manual') return null;
   const start = state.segmentStart;
   // The segment may have started after the previous sample.
   const from =
@@ -135,6 +138,20 @@ export function tickEngine(state: EngineState, sample: WorkoutSample): EngineSte
   return { state: { ...next, lastSample: sample }, events };
 }
 
+/**
+ * Done or Ready tapped: ends the current manual segment and starts the
+ * next one. Does nothing on a segment that ends by itself.
+ */
+export function confirmSegment(state: EngineState, sample: WorkoutSample): EngineStep {
+  const events: WorkoutEvent[] = [];
+  const segment = currentSegment(state);
+  if (state.finished || !segment || segment.end === 'auto') return { state, events };
+  return {
+    state: { ...moveOn(state, segment.end, sample, events), lastSample: sample },
+    events,
+  };
+}
+
 /** Ends the current segment now and starts the next one. */
 export function skipSegment(state: EngineState, sample: WorkoutSample): EngineStep {
   const events: WorkoutEvent[] = [];
@@ -155,9 +172,12 @@ export function finishEngine(state: EngineState, sample: WorkoutSample): EngineS
 }
 
 export type SegmentProgress = {
-  /** Seconds or meters left in the current segment (0 when done). */
+  /**
+   * Seconds or meters left in the current segment (0 when done). A manual
+   * segment has no end to count down to: 0.
+   */
   remaining: number;
-  /** Share of the current segment left, 1 to 0. */
+  /** Share of the current segment left, 1 to 0. A manual segment stays at 1. */
   fractionLeft: number;
   /** Position in the whole workout by estimated time, 0 to 1. */
   overall: number;
@@ -168,14 +188,18 @@ export function segmentProgress(state: EngineState, sample: WorkoutSample): Segm
   if (!segment) return { remaining: 0, fractionLeft: 0, overall: 1 };
 
   const start = state.segmentStart;
-  const total =
-    segment.target.type === 'duration' ? segment.target.seconds : segment.target.meters;
-  const done =
-    segment.target.type === 'duration'
-      ? sample.movingSeconds - start.movingSeconds
-      : (sample.distanceKm - start.distanceKm) * 1000;
-  const remaining = Math.min(total, Math.max(0, total - done));
-  const fractionLeft = total > 0 ? remaining / total : 0;
+  const { target } = segment;
+  let remaining = 0;
+  let fractionLeft = 1;
+  if (target.type !== 'manual') {
+    const total = target.type === 'duration' ? target.seconds : target.meters;
+    const done =
+      target.type === 'duration'
+        ? sample.movingSeconds - start.movingSeconds
+        : (sample.distanceKm - start.distanceKm) * 1000;
+    remaining = Math.min(total, Math.max(0, total - done));
+    fractionLeft = total > 0 ? remaining / total : 0;
+  }
 
   const estimates = state.segments.map((s) => s.estimatedSeconds);
   const workoutTotal = estimates.reduce((sum, s) => sum + s, 0);

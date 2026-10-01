@@ -38,8 +38,11 @@ export default function PlanRunView(props: RunViewProps) {
   return <PlanRun {...props} workout={workout} segments={segments} />;
 }
 
-/** "1:30" / "12:05" left, or "320 m" / "1.25 km" left. */
+/** "1:30" / "12:05" left, "320 m" / "1.25 km" left, or a manual step's prompt. */
 function countdown(segment: RunSegment, remaining: number) {
+  if (segment.target.type === 'manual') {
+    return { value: segment.end === 'ready' ? 'Ready?' : 'Go!', unit: '' };
+  }
   if (segment.target.type === 'duration') {
     const total = Math.ceil(remaining);
     const clock = formatClock(total);
@@ -150,6 +153,9 @@ function PlanRun({
 
   const paused = runState === 'paused';
   const showWorkoutChoice = complete && !keepGoing && runState === 'running';
+  // A manual segment ends on a tap; until the run task adds its own
+  // control, the skip link is that tap (and doesn't count as a skip).
+  const manualEnd = segment && segment.end !== 'auto' ? segment.end : null;
   const waitingForGps =
     segment?.target.type === 'distance' && distanceKm === 0 && runState === 'running';
 
@@ -239,13 +245,15 @@ function PlanRun({
         {!complete && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Skip segment"
+            accessibilityLabel={
+              manualEnd === 'done' ? 'Done' : manualEnd === 'ready' ? 'Ready' : 'Skip segment'
+            }
             hitSlop={12}
-            onPress={run.skip}
+            onPress={manualEnd ? run.confirm : run.skip}
             style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
           >
             <Animated.Text style={[typography.headline, { color: theme.secondary }]}>
-              Skip segment ›
+              {manualEnd === 'done' ? 'Done ›' : manualEnd === 'ready' ? 'Ready ›' : 'Skip segment ›'}
             </Animated.Text>
           </Pressable>
         )}
@@ -318,7 +326,9 @@ function SegmentBlock({
         </View>
         {segment.rep && (
           <Animated.Text style={[typography.headline, styles.tabular, { color: theme.secondary }]}>
-            {`Rep ${segment.rep.number} of ${segment.rep.of}`}
+            {segment.set
+              ? `Set ${segment.set.number}/${segment.set.of} · Rep ${segment.rep.number}/${segment.rep.of}`
+              : `Rep ${segment.rep.number} of ${segment.rep.of}`}
           </Animated.Text>
         )}
       </View>
@@ -326,7 +336,11 @@ function SegmentBlock({
       <View
         style={styles.countdownRow}
         accessible
-        accessibilityLabel={`${value} ${unit === 'm' ? 'meters' : unit === 'km' ? 'kilometers' : ''} left`}
+        accessibilityLabel={
+          segment.end !== 'auto'
+            ? `Tap ${segment.end === 'done' ? 'Done' : 'Ready'} when finished`
+            : `${value} ${unit === 'm' ? 'meters' : unit === 'km' ? 'kilometers' : ''} left`
+        }
       >
         <Animated.Text
           numberOfLines={1}

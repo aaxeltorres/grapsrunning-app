@@ -1,23 +1,29 @@
 /**
  * A plan workout as the ordered list of segments a run executes. Pure
  * logic (no React), built on the Workout model in coach/plan.ts: repeat
- * groups are unrolled, and each segment keeps its step's id, kind and
- * target, so nothing here is a second workout model.
+ * groups and sets are unrolled (by `unrollSegments`, the same unrolling
+ * the totals use), and each segment keeps its step's id, kind, target and
+ * zone, so nothing here is a second workout model.
  */
 
 import {
   formatDistanceShort,
   formatDurationShort,
-  isRepeatGroup,
+  isRest,
   isRunWalk,
+  manualEndLabel,
   stepDuration,
+  unrollSegments,
+  type Counter,
   type Pace,
   type StepKind,
   type StepTarget,
   type Workout,
   type WorkoutStep,
+  type Zone,
 } from '../coach/plan';
 import { PACE_TOLERANCE_S_PER_KM } from './goalConfig';
+import { MIN_MEASURED_DISTANCE_M, MIN_PACED_EFFORT_S } from './workoutConfig';
 
 /** Color family of a segment on the run screen. */
 export type SegmentTone = 'fast' | 'recovery' | 'easy' | 'long' | 'warm';
@@ -31,15 +37,35 @@ export type RunSegment = {
   stepId: string;
   kind: StepKind;
   target: StepTarget;
-  /** `null` when the step has no pace target (walks, free jogs). */
+  /**
+   * `null` when the step has no pace target (walks, free jogs) or is too
+   * short for GPS to measure one (see workoutConfig.ts).
+   */
   paceRange: PaceRange | null;
   /** Inside a repeat group: "Rep 3 of 9". */
-  rep: { number: number; of: number } | null;
+  rep: Counter | null;
+  /** Inside a group with sets: "Set 1 of 2". */
+  set: Counter | null;
+  /** A micro rest between reps, a macro rest between sets, or neither. */
+  rest: 'micro' | 'macro' | null;
+  zone: Zone | null;
+  /**
+   * `auto`: ends on its duration or distance. `done` / `ready`: a manual
+   * step that ends when the runner taps Done (an effort) or Ready (a rest).
+   */
+  end: 'auto' | 'done' | 'ready';
   /** For the proportional workout bar. */
   estimatedSeconds: number;
   label: string;
   tone: SegmentTone;
 };
+
+/** Whether GPS can judge a pace over this step. */
+function isPaceMeasurable(target: StepTarget) {
+  if (target.type === 'manual') return false;
+  if (target.type === 'duration') return target.seconds >= MIN_PACED_EFFORT_S;
+  return target.meters >= MIN_MEASURED_DISTANCE_M;
+}
 
 /** A single target pace counts as on target within the shared tolerance. */
 export function toPaceRange(pace: Pace | null): PaceRange | null {
@@ -60,14 +86,22 @@ function describe(
     case 'cooldown':
       return { label: 'Cool-down', tone: 'warm' };
     case 'work':
-      return { label: 'Fast rep', tone: 'fast' };
+      return {
+        label: step.target.type === 'manual' ? 'Sprint' : 'Fast rep',
+        tone: 'fast',
+      };
     case 'recovery':
       return runWalk
         ? { label: 'Walk', tone: 'recovery' }
         : { label: 'Recovery', tone: 'recovery' };
+    case 'macroRest':
+      return { label: 'Set rest', tone: 'recovery' };
     case 'steady':
       if (runWalk) return { label: 'Run', tone: workout.type === 'long' ? 'long' : 'easy' };
       if (workout.type === 'long') return { label: 'Long run', tone: 'long' };
+      if (step.zone !== undefined && workout.type !== 'easy') {
+        return { label: `Zone ${step.zone}`, tone: step.zone >= 4 ? 'fast' : 'easy' };
+      }
       return { label: 'Easy run', tone: 'easy' };
   }
 }
@@ -76,34 +110,27 @@ function describe(
 export function buildRunSegments(
   workout: Pick<Workout, 'type' | 'segments'>,
 ): RunSegment[] {
-  const out: RunSegment[] = [];
-  const push = (step: WorkoutStep, rep: RunSegment['rep']) =>
-    out.push({
-      index: out.length,
-      stepId: step.id,
-      kind: step.kind,
-      target: step.target,
-      paceRange: toPaceRange(step.pace),
-      rep,
-      estimatedSeconds: stepDuration(step),
-      ...describe(step, workout),
-    });
-
-  for (const segment of workout.segments) {
-    if (!isRepeatGroup(segment)) {
-      push(segment, null);
-      continue;
-    }
-    for (let n = 1; n <= segment.repeat; n++) {
-      for (const step of segment.steps) push(step, { number: n, of: segment.repeat });
-    }
-  }
-  return out;
+  return unrollSegments(workout.segments).map(({ step, rep, set }, index) => ({
+    index,
+    stepId: step.id,
+    kind: step.kind,
+    target: step.target,
+    paceRange: isPaceMeasurable(step.target) ? toPaceRange(step.pace) : null,
+    rep,
+    set,
+    rest: step.kind === 'macroRest' ? 'macro' : isRest(step) ? 'micro' : null,
+    zone: step.zone ?? null,
+    end: step.target.type === 'manual' ? manualEndLabel(step) : 'auto',
+    estimatedSeconds: stepDuration(step),
+    ...describe(step, workout),
+  }));
 }
 
-/** "400 m", "90 s", "5 min" */
+/** "400 m", "90 s", "5 min"; a manual step: "20 m", "Until ready". */
 export function formatSegmentTarget(segment: RunSegment): string {
-  return segment.target.type === 'distance'
-    ? formatDistanceShort(segment.target.meters)
-    : formatDurationShort(segment.target.seconds);
+  const { target } = segment;
+  if (target.type === 'distance') return formatDistanceShort(target.meters);
+  if (target.type === 'duration') return formatDurationShort(target.seconds);
+  if (target.meters !== undefined) return formatDistanceShort(target.meters);
+  return segment.end === 'ready' ? 'Until ready' : 'Until done';
 }

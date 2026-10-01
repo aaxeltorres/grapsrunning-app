@@ -9,9 +9,15 @@ import type { RunSegment } from './workoutSegments';
 /** Where the run was: moving time (pauses excluded) and distance. */
 export type WorkoutSample = { movingSeconds: number; distanceKm: number };
 
-export type SegmentEndReason = 'completed' | 'skipped' | 'finished';
+/**
+ * `completed`: its duration or distance was reached. `done` / `ready`: a
+ * manual step ended by the runner's tap. `skipped`: Skip. `finished`: the
+ * run ended early with Finish.
+ */
+export type SegmentEndReason = 'completed' | 'done' | 'ready' | 'skipped' | 'finished';
 
 export type WorkoutEvent =
+  /** The segment carries its zone, rep / set counters and how it ends. */
   | { type: 'segmentStart'; segment: RunSegment; at: WorkoutSample }
   | {
       type: 'segmentEnd';

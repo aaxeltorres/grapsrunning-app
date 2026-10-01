@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RunState } from './useRunTracking';
 import {
+  confirmSegment,
   currentSegment,
   finishEngine,
   isComplete,
@@ -32,6 +33,8 @@ type Result = {
   /** The current segment's pace is off its target range. */
   paceAlert: boolean;
   skip: () => void;
+  /** Done or Ready tapped on a manual segment. */
+  confirm: () => void;
   /**
    * Read it before `finishEarly`: whether every segment was run, none
    * skipped. Anything else is a partial workout.
@@ -118,6 +121,10 @@ export function useWorkoutRun(
     if (engineRef.current) apply(skipSegment(engineRef.current, sampleRef.current));
   }, [apply]);
 
+  const confirm = useCallback(() => {
+    if (engineRef.current) apply(confirmSegment(engineRef.current, sampleRef.current));
+  }, [apply]);
+
   const outcome = useCallback(
     (): WorkoutOutcome => ({
       completedAll:
@@ -142,6 +149,7 @@ export function useWorkoutRun(
     complete: engine ? isComplete(engine) : segments.length === 0,
     paceAlert,
     skip,
+    confirm,
     outcome,
     finishEarly,
     events,
@@ -150,5 +158,7 @@ export function useWorkoutRun(
 
 function initialAmount(segment: RunSegment | undefined) {
   if (!segment) return 0;
-  return segment.target.type === 'duration' ? segment.target.seconds : segment.target.meters;
+  const { target } = segment;
+  if (target.type === 'manual') return 0;
+  return target.type === 'duration' ? target.seconds : target.meters;
 }
