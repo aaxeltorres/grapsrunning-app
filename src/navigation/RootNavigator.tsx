@@ -9,6 +9,7 @@ import {
   StatsScreen,
   PlaceholderScreen,
   RunModeScreen,
+  GoalSetupScreen,
   ActiveRunScreen,
   RunResultsScreen,
   PlanScreen,
@@ -49,6 +50,11 @@ export default function RootNavigator() {
           name="RunMode"
           component={RunModeScreen}
           options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="GoalSetup"
+          component={GoalSetupScreen}
+          options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
           name="ActiveRun"

@@ -1,4 +1,5 @@
 import type { RunModeId } from '../run/runModes';
+import type { RunGoal } from '../run/goals';
 
 export type RouteCoordinate = {
   latitude: number;
@@ -18,12 +19,15 @@ export type RootStackParamList = {
   CoachMike: undefined;
   Routes: undefined;
   RunMode: undefined;
-  /** No params (or no mode) starts a quick run. */
-  ActiveRun: { mode?: RunModeId } | undefined;
+  GoalSetup: undefined;
+  /** No params (or no mode) starts a quick run. `goal` is for goal runs. */
+  ActiveRun: { mode?: RunModeId; goal?: RunGoal } | undefined;
   RunResults: {
     distanceKm: number;
     durationSeconds: number;
     route: RouteCoordinate[];
+    /** Set when the run was a goal run. */
+    goal?: RunGoal;
   };
 };
 

@@ -45,14 +45,15 @@ const MESSAGE_KEY: Record<TodayRunState['kind'], RunModeMessageKey> = {
 
 /**
  * Run mode selector, opened from "Start run" on Home. Quick start begins a
- * run; the other modes are not built yet and show a "Coming soon" sheet.
+ * run, Set a goal opens the goal setup; Today's workout is not built yet
+ * and shows a "Coming soon" sheet.
  */
 export default function RunModeScreen({ navigation }: Props) {
   const reduceMotion = useReduceMotion();
   const [today] = useState(todayISO);
   const [state, setState] = useState<TodayRunState>({ kind: 'none' });
   // `soonMode` outlives the sheet, so its text stays during the exit animation.
-  const [soonMode, setSoonMode] = useState<RunModeId>('goal');
+  const [soonMode, setSoonMode] = useState<RunModeId>('plan');
   const [soonVisible, setSoonVisible] = useState(false);
   const enterStyle = useEntranceAnimation({
     animate: true,
@@ -80,6 +81,10 @@ export default function RunModeScreen({ navigation }: Props) {
     if (mode === 'quick') {
       // Replace, so the run flows back to Home through the results.
       navigation.replace('ActiveRun', { mode: 'quick' });
+      return;
+    }
+    if (mode === 'goal') {
+      navigation.navigate('GoalSetup');
       return;
     }
     setSoonMode(mode);

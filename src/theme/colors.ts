@@ -43,6 +43,11 @@ export const colors = {
   runDarkBg: '#0B0B0C',
   runDarkText: '#FFFFFF',
   runDarkTextSecondary: '#9CA3AF',
+  runDarkTrack: '#2C2C2E', // empty part of a progress bar on the dark run screen
+
+  // Goal runs: off-track red, readable on each theme
+  alertRedLight: '#D70015', // on white (paused)
+  alertRedDark: '#FF453A', // on runDarkBg (running)
 
   // Coach Mike chat
   chatBubbleIncoming: '#E9E9EB', // iMessage-style gray for Mike's bubbles
