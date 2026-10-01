@@ -4,6 +4,7 @@
  */
 
 import {
+  isFinished,
   upcomingWorkouts,
   type Plan,
   type Workout,
@@ -13,7 +14,7 @@ import type { ISODate } from '../utils/dates';
 export type TodayRunState =
   /** A workout is waiting for today. */
   | { kind: 'planned'; workout: Workout }
-  /** Today's workout is already done. */
+  /** Today's workout is already done (completed, or partial: check its status). */
   | { kind: 'completed'; workout: Workout }
   /** Rest day, with the next planned workout when there is one. */
   | { kind: 'rest'; next?: Workout }
@@ -28,7 +29,7 @@ export function todayRunState(plan: Plan | null, today: ISODate): TodayRunState 
 
   if (!workout) return { kind: 'none', next };
   if (workout.type === 'rest') return { kind: 'rest', next };
-  if (workout.status === 'completed') return { kind: 'completed', workout };
+  if (isFinished(workout)) return { kind: 'completed', workout };
   if (workout.status === 'skipped') return { kind: 'none', next };
   return { kind: 'planned', workout };
 }

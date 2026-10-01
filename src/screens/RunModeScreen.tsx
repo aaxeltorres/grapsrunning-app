@@ -20,6 +20,7 @@ import {
 } from '../coach/plan';
 import { runModeMessage, type RunModeMessageKey } from '../coach/planOnboardingScript';
 import { planStorage } from '../storage/planStorage';
+import { workoutActuals } from '../run/planResult';
 import { RUN_MODES, type RunModeId } from '../run/runModes';
 import { todayRunState, type TodayRunState } from '../run/todayWorkout';
 import { formatDayLabel, todayISO } from '../utils/dates';
@@ -36,12 +37,11 @@ import { formatKm, formatMinutes, formatPace } from '../components/WorkoutCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RunMode'>;
 
-const MESSAGE_KEY: Record<TodayRunState['kind'], RunModeMessageKey> = {
-  planned: 'planned',
-  completed: 'completed',
-  rest: 'rest',
-  none: 'none',
-};
+function messageKey(state: TodayRunState): RunModeMessageKey {
+  return state.kind === 'completed' && state.workout.status === 'partial'
+    ? 'partial'
+    : state.kind;
+}
 
 /**
  * Run mode selector, opened from "Start run" on Home. Quick start begins a
@@ -113,7 +113,7 @@ export default function RunModeScreen({ navigation }: Props) {
             <MikeAvatar />
             <View style={styles.mikeBubble}>
               <ChatBubble
-                text={runModeMessage(MESSAGE_KEY[state.kind], today)}
+                text={runModeMessage(messageKey(state), today)}
                 sender="mike"
                 animateOnMount={false}
                 reduceMotion={reduceMotion}
@@ -135,10 +135,6 @@ export default function RunModeScreen({ navigation }: Props) {
       >
         <NoWorkoutSheet
           state={state}
-          onRunAgain={(workout) => {
-            setSheetVisible(false);
-            startWorkout(workout);
-          }}
           onQuickStart={() => {
             setSheetVisible(false);
             startQuickRun();
@@ -153,24 +149,28 @@ export default function RunModeScreen({ navigation }: Props) {
 /** Why Today's workout can't start a planned workout, and what to do instead. */
 function NoWorkoutSheet({
   state,
-  onRunAgain,
   onQuickStart,
   onClose,
 }: {
   state: TodayRunState;
-  onRunAgain: (workout: Workout) => void;
   onQuickStart: () => void;
   onClose: () => void;
 }) {
   if (state.kind === 'completed') {
+    const partial = state.workout.status === 'partial';
+    const name = displayName(state.workout);
     return (
       <>
-        <Text style={[typography.title2, styles.sheetTitle]}>Already done today</Text>
+        <Text style={[typography.title2, styles.sheetTitle]}>
+          {partial ? 'You did part of it' : 'Already done today'}
+        </Text>
         <Text style={[typography.body, styles.sheetBody]}>
-          {`You finished ${displayName(state.workout)} today. Run it again, or enjoy the rest.`}
+          {partial
+            ? `You got part of ${name} in today. Feel like more? Go for a free run.`
+            : `You finished ${name} today. Enjoy the rest, or go for a free run.`}
         </Text>
         <View style={styles.sheetActions}>
-          <Button label="Run it again" variant="accent" onPress={() => onRunAgain(state.workout)} />
+          <Button label="Free run" variant="accent" onPress={onQuickStart} />
           <Button label="Not now" variant="secondary" onPress={onClose} />
         </View>
       </>
@@ -284,10 +284,12 @@ function PlanModeCard({
 
   if (state.kind === 'completed') {
     const { workout } = state;
+    const partial = workout.status === 'partial';
+    const actual = workoutActuals(workout);
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${name}. ${displayName(workout)}, completed`}
+        accessibilityLabel={`${name}. ${displayName(workout)}, ${partial ? 'partially completed' : 'completed'}`}
         onPress={onPress}
         style={({ pressed }) => [
           styles.card,
@@ -298,17 +300,17 @@ function PlanModeCard({
       >
         <View style={styles.headingRow}>
           <Text style={[typography.subheadline, styles.quietHeading]}>{name}</Text>
-          <View style={[styles.pill, styles.donePill]}>
-            <Text style={[typography.caption, styles.pillText]}>Completed ✓</Text>
+          <View style={[styles.pill, partial ? styles.partialPill : styles.donePill]}>
+            <Text style={[typography.caption, styles.pillText]}>
+              {partial ? 'Partial' : 'Completed ✓'}
+            </Text>
           </View>
         </View>
         <Text style={[typography.headline, styles.title]}>
           {displayName(workout)}
         </Text>
         <Text style={[typography.subheadline, styles.quietBody]}>
-          {`${formatKm(totalDistance(workout))} · ${formatMinutes(
-            totalDuration(workout),
-          )}`}
+          {`${formatKm(actual.distanceMeters)} · ${formatMinutes(actual.durationSeconds)}`}
         </Text>
       </Pressable>
     );
@@ -433,6 +435,9 @@ const styles = StyleSheet.create({
   },
   donePill: {
     backgroundColor: colors.statGreenBg,
+  },
+  partialPill: {
+    backgroundColor: colors.divider,
   },
   pillText: {
     color: colors.textPrimary,

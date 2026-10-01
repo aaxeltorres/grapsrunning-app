@@ -442,6 +442,10 @@ export const runModeMessages = {
     "Today's workout is done. Want a bonus run? 😄",
     "You already crushed today's run. A little extra is up to you! 🎉",
   ],
+  partial: [
+    "You got part of today's workout in, and that counts. Feel like a bit more? 💙",
+    "Not the whole session, but a good start. A free run is up to you! 🙂",
+  ],
   rest: [
     'Rest day on the plan. A relaxed run is fine if your legs want it. 🌿',
     'Recovery day! If you run, keep it short and easy. 💙',
