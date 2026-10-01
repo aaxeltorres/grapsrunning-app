@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -16,7 +16,10 @@ import { colors, motion, typography } from '../theme';
 import TopBar from '../components/TopBar';
 import OnboardingChat from '../components/OnboardingChat';
 import PlanOverview from '../components/PlanOverview';
-import { planOnboardingScript } from '../coach/planOnboardingScript';
+import {
+  planCreatedMessage,
+  planOnboardingScript,
+} from '../coach/planOnboardingScript';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import { usePlanOnboarding } from '../hooks/usePlanOnboarding';
 import { useReduceMotion } from '../hooks/useReduceMotion';
@@ -37,7 +40,7 @@ const TITLE_ROW_HEIGHT = 30;
  * (resumed where the user left off), which then turns into the plan.
  * Later visits open the plan directly.
  */
-export default function PlanScreen({ navigation }: Props) {
+export default function PlanScreen({ navigation, route }: Props) {
   const { status, profile, plan, confirm, finish, reset, refresh, savePlan } =
     usePlanOnboarding();
   const reduceMotion = useReduceMotion();
@@ -79,6 +82,16 @@ export default function PlanScreen({ navigation }: Props) {
       refresh();
     }, [refresh]),
   );
+
+  // Your profile created a new plan: Mike says so until the user moves on.
+  const [newPlanLine, setNewPlanLine] = useState<string | null>(null);
+  const planCreated = route.params?.planCreated;
+  useEffect(() => {
+    if (!planCreated) return;
+    setNewPlanLine(planCreatedMessage);
+    navigation.setParams({ planCreated: undefined });
+  }, [planCreated, navigation]);
+  const dismissNewPlanLine = useCallback(() => setNewPlanLine(null), []);
 
   const handleOpenProfile = useCallback(
     () => navigation.navigate('Profile'),
@@ -163,6 +176,8 @@ export default function PlanScreen({ navigation }: Props) {
               today={today}
               gentle={profile.injuryStatus === 'hurts_now'}
               reduceMotion={reduceMotion}
+              mikeNotice={newPlanLine}
+              onNoticeDismiss={dismissNewPlanLine}
               onStartWorkout={handleStartWorkout}
               onRunAgain={handleRunAgain}
               onSaveWorkout={handleSaveWorkout}

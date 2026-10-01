@@ -4,7 +4,8 @@ import { colors, spacing, typography } from '../theme';
 
 type Props = {
   label: string;
-  value: string;
+  /** Left out for an action row: only the label and the chevron show. */
+  value?: string;
   /** Draws a divider line above the row. */
   divider?: boolean;
   /** Locks the row and hides the chevron. */
@@ -27,8 +28,10 @@ export default function AnswerRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value}`}
-      accessibilityHint={disabled ? undefined : 'Change your answer'}
+      accessibilityLabel={value === undefined ? label : `${label}: ${value}`}
+      accessibilityHint={
+        disabled || value === undefined ? undefined : 'Change your answer'
+      }
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -41,8 +44,14 @@ export default function AnswerRow({
       {/* Label above the value, so lists like the training days get the
           full width instead of wrapping mid-list. */}
       <View style={styles.text}>
-        <Text style={[typography.subheadline, styles.label]}>{label}</Text>
-        <Text style={[typography.body, styles.value]}>{value}</Text>
+        {value === undefined ? (
+          <Text style={[typography.body, styles.value]}>{label}</Text>
+        ) : (
+          <>
+            <Text style={[typography.subheadline, styles.label]}>{label}</Text>
+            <Text style={[typography.body, styles.value]}>{value}</Text>
+          </>
+        )}
       </View>
       {!disabled && (
         <Text

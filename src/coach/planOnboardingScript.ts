@@ -408,6 +408,10 @@ export function planDayMessage(key: PlanDayMessageKey, date: ISODate): string {
 export const profileScreenMessage =
   'Need to change something? Tap any answer. 👆';
 
+/** Mike's line after "Create a new plan". */
+export const planCreatedMessage =
+  "Fresh plan, fresh start! I rebuilt your schedule around your answers. Let's go! 🚀";
+
 /**
  * Mike's line in the workout editor: one per run type and length band
  * (shortest third, middle third, longest third of what the type allows).

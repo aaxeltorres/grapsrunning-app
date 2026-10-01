@@ -13,7 +13,8 @@ export type RootStackParamList = {
   SignIn: undefined;
   Home: undefined;
   Stats: undefined;
-  Plan: undefined;
+  /** `planCreated`: set by Your profile after "Create a new plan", so Mike says so. */
+  Plan: { planCreated?: boolean } | undefined;
   Profile: undefined;
   // Placeholder destinations for the other Home feature cards.
   // Not part of the current screen scope — wired up as empty stubs

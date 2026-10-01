@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import {
@@ -17,8 +18,13 @@ import {
   profileRows,
   withAnswer,
 } from '../coach/conversation';
-import { generatePlan, regeneratePlan } from '../coach/generatePlan';
 import {
+  createNewPlan,
+  generatePlan,
+  regeneratePlan,
+} from '../coach/generatePlan';
+import {
+  planCreatedMessage,
   planOnboardingScript,
   profileScreenMessage,
 } from '../coach/planOnboardingScript';
@@ -71,7 +77,8 @@ planOnboardingScript
  * "Your profile": every onboarding answer in a list, each one editable
  * through the same answer sheets as Mike's chat. Answers save as soon as
  * a sheet is confirmed. When goal, level, speed work, training days or
- * injuries changed, leaving the screen offers to update the plan.
+ * injuries changed, leaving the screen offers to update the plan or to
+ * create a new one; a row at the bottom creates a new plan on demand.
  */
 export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -159,7 +166,8 @@ export default function ProfileScreen({ navigation }: Props) {
   // Leaving: when the answers behind the plan changed, ask about the plan
   // first. The leave action is held until the user chooses.
   const [syncVisible, setSyncVisible] = useState(false);
-  const [updating, setUpdating] = useState(false);
+  // Which plan action is running, if any.
+  const [busy, setBusy] = useState<'update' | 'create' | null>(null);
   const leaveActionRef = useRef<LeaveAction | null>(null);
   const allowLeaveRef = useRef(false);
 
@@ -190,30 +198,80 @@ export default function ProfileScreen({ navigation }: Props) {
     else navigation.goBack();
   };
 
-  const handleUpdatePlan = async () => {
+  // Tells the Plan screen (below this one in the stack) that Mike should
+  // announce the new plan. The held leave action is left as it is.
+  const announceNewPlan = () => {
+    const planRoute = navigation
+      .getState()
+      .routes.find((route) => route.name === 'Plan');
+    if (!planRoute) return;
+    navigation.dispatch({
+      ...CommonActions.setParams({ planCreated: true }),
+      source: planRoute.key,
+    });
+  };
+
+  // Runs the chosen plan action, saves the result and leaves. A failure is
+  // logged and the user still leaves, with the plan as it was.
+  const syncPlanAndLeave = async (kind: 'update' | 'create') => {
     const current = savedRef.current;
-    if (!current || updating) return;
-    setUpdating(true);
+    if (!current || busy) return;
+    setBusy(kind);
     try {
       const plan = await planStorage.get().catch(() => null);
-      const updated = plan
-        ? await regeneratePlan(plan, current)
-        : await generatePlan(current);
-      await planStorage.save(updated);
+      const next =
+        kind === 'create'
+          ? await createNewPlan(plan, current)
+          : plan
+            ? await regeneratePlan(plan, current)
+            : await generatePlan(current);
+      await planStorage.save(next);
+      if (kind === 'create') announceNewPlan();
       successNotification();
     } catch (error) {
-      console.warn('Failed to update plan', error);
+      console.warn(`Failed to ${kind} plan`, error);
     }
-    setUpdating(false);
+    setBusy(null);
     setSyncVisible(false);
     leave();
   };
 
+  const handleUpdatePlan = () => syncPlanAndLeave('update');
+  const handleCreatePlan = () => syncPlanAndLeave('create');
+
   const handleKeepPlan = () => {
-    if (updating) return;
+    if (busy) return;
     lightImpact();
     setSyncVisible(false);
     leave();
+  };
+
+  // "Create a new plan" on demand, from the row at the bottom.
+  const [createVisible, setCreateVisible] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [mikeLine, setMikeLine] = useState(profileScreenMessage);
+
+  const openCreate = () => {
+    if (sheet.active || busy) return;
+    setCreateVisible(true);
+  };
+
+  const handleCreateNow = async () => {
+    const current = savedRef.current;
+    if (!current || creating) return;
+    setCreating(true);
+    try {
+      const plan = await planStorage.get().catch(() => null);
+      await planStorage.save(await createNewPlan(plan, current));
+      // The plan matches the answers now: leaving needs no plan update.
+      baselineRef.current = current;
+      setMikeLine(planCreatedMessage);
+      successNotification();
+    } catch (error) {
+      console.warn('Failed to create plan', error);
+    }
+    setCreating(false);
+    setCreateVisible(false);
   };
 
   // "Intensity by": a setting, saved right away. It never makes the plan
@@ -278,7 +336,8 @@ export default function ProfileScreen({ navigation }: Props) {
             <MikeAvatar />
             <View style={styles.mikeBubble}>
               <ChatBubble
-                text={profileScreenMessage}
+                key={mikeLine}
+                text={mikeLine}
                 sender="mike"
                 reduceMotion={reduceMotion}
               />
@@ -311,6 +370,13 @@ export default function ProfileScreen({ navigation }: Props) {
                 onPress={openIntensity}
               />
             </View>
+          </View>
+
+          <View style={styles.list}>
+            <AnswerRow
+              label="Create a new plan"
+              onPress={openCreate}
+            />
           </View>
         </ScrollView>
       ) : (
@@ -371,7 +437,7 @@ export default function ProfileScreen({ navigation }: Props) {
         visible={syncVisible}
         // Tapping outside stays on the screen.
         onDismiss={() => {
-          if (!updating) setSyncVisible(false);
+          if (!busy) setSyncVisible(false);
         }}
         dragAnywhere
         reduceMotion={reduceMotion}
@@ -381,21 +447,64 @@ export default function ProfileScreen({ navigation }: Props) {
             Update your plan with these changes?
           </Text>
           <Text style={[typography.subheadline, styles.syncBody]}>
-            Only workouts that are still ahead, planned and not edited will
-            change.
+            Update plan changes only workouts that are still ahead, planned and
+            not edited. Create a new plan rebuilds every planned workout from
+            today on, edited ones included. Finished and skipped workouts stay.
           </Text>
         </View>
         <Button
           label="Update plan"
           variant="accent"
-          loading={updating}
+          loading={busy === 'update'}
+          disabled={busy === 'create'}
           onPress={handleUpdatePlan}
+        />
+        <Button
+          label="Create a new plan"
+          variant="secondary"
+          loading={busy === 'create'}
+          disabled={busy === 'update'}
+          onPress={handleCreatePlan}
+          style={styles.keepButton}
         />
         <Button
           label="Keep current plan"
           variant="secondary"
-          disabled={updating}
+          disabled={busy !== null}
           onPress={handleKeepPlan}
+          style={styles.keepButton}
+        />
+      </BottomSheet>
+
+      <BottomSheet
+        visible={createVisible}
+        onDismiss={() => {
+          if (!creating) setCreateVisible(false);
+        }}
+        dragAnywhere
+        reduceMotion={reduceMotion}
+      >
+        <View style={styles.syncHeader}>
+          <Text style={[typography.title2, styles.syncTitle]}>
+            Create a new plan?
+          </Text>
+          <Text style={[typography.subheadline, styles.syncBody]}>
+            Mike will rebuild every planned workout from today on using your
+            current answers. Workouts you edited will be replaced. Finished and
+            skipped workouts and their results stay.
+          </Text>
+        </View>
+        <Button
+          label="Create a new plan"
+          variant="accent"
+          loading={creating}
+          onPress={handleCreateNow}
+        />
+        <Button
+          label="Cancel"
+          variant="secondary"
+          disabled={creating}
+          onPress={() => setCreateVisible(false)}
           style={styles.keepButton}
         />
       </BottomSheet>

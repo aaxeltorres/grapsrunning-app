@@ -76,6 +76,9 @@ type Props = {
   /** An injury hurts now: Mike reminds the user to take it easy. */
   gentle: boolean;
   reduceMotion: boolean;
+  /** Replaces Mike's day line until the user picks another day or view. */
+  mikeNotice?: string | null;
+  onNoticeDismiss?: () => void;
   onStartWorkout: (workout: Workout) => void;
   /** A free run, from a finished workout's "Run again freely". */
   onRunAgain: () => void;
@@ -90,6 +93,8 @@ export default function PlanOverview({
   today,
   gentle,
   reduceMotion,
+  mikeNotice,
+  onNoticeDismiss,
   onStartWorkout,
   onRunAgain,
   onSaveWorkout,
@@ -97,6 +102,18 @@ export default function PlanOverview({
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<PlanView>('week');
   const [selectedDate, setSelectedDate] = useState(today);
+  // Moving on (another day or view) ends Mike's notice.
+  const selectDay = useCallback(
+    (date: ISODate) => {
+      if (date !== selectedDate) onNoticeDismiss?.();
+      setSelectedDate(date);
+    },
+    [selectedDate, onNoticeDismiss],
+  );
+  const changeView = (next: PlanView) => {
+    onNoticeDismiss?.();
+    setView(next);
+  };
   // The month view always shows the selected day's month, so the card
   // under the grid always matches what the grid shows.
   const visibleMonth = startOfMonth(selectedDate);
@@ -110,10 +127,9 @@ export default function PlanOverview({
     [workoutsByDate],
   );
   const selectedWorkout = workoutFor(selectedDate);
-  const messageText = planDayMessage(
-    mikeMessageKey(selectedWorkout, gentle),
-    selectedDate,
-  );
+  const messageText =
+    mikeNotice ??
+    planDayMessage(mikeMessageKey(selectedWorkout, gentle), selectedDate);
 
   // Only planned training days can be edited, not rest, finished or
   // skipped ones.
@@ -176,9 +192,9 @@ export default function PlanOverview({
         (workout) =>
           isSameMonth(workout.date, month) && workout.type !== 'rest',
       );
-      setSelectedDate(firstWorkout?.date ?? month);
+      selectDay(firstWorkout?.date ?? month);
     },
-    [plan, visibleMonth],
+    [plan, visibleMonth, selectDay],
   );
 
   const comingUp = upcomingWorkouts(
@@ -200,7 +216,7 @@ export default function PlanOverview({
         <SegmentedControl
           options={VIEW_OPTIONS}
           value={view}
-          onChange={setView}
+          onChange={changeView}
           reduceMotion={reduceMotion}
         />
 
@@ -211,7 +227,7 @@ export default function PlanOverview({
                 selectedDate={selectedDate}
                 today={today}
                 workoutFor={workoutFor}
-                onSelect={setSelectedDate}
+                onSelect={selectDay}
               />
 
               <View style={styles.mikeRow}>
@@ -260,7 +276,7 @@ export default function PlanOverview({
                       key={workout.id}
                       workout={workout}
                       showDivider={index > 0}
-                      onPress={() => setSelectedDate(workout.date)}
+                      onPress={() => selectDay(workout.date)}
                     />
                   ))}
                 </View>
@@ -273,7 +289,7 @@ export default function PlanOverview({
                 selectedDate={selectedDate}
                 today={today}
                 workoutFor={workoutFor}
-                onSelect={setSelectedDate}
+                onSelect={selectDay}
                 onChangeMonth={changeMonth}
               />
               <WorkoutSummaryCard

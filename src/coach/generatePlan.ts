@@ -527,6 +527,42 @@ function isRegeneratable(workout: Workout, today: ISODate) {
 }
 
 /**
+ * A workout "Create a new plan" replaces: planned and from today on, edited
+ * or not. Completed, partial and skipped workouts (and past days) stay.
+ */
+function isReplaceable(workout: Workout, today: ISODate) {
+  return workout.date >= today && workout.status === 'planned';
+}
+
+/**
+ * Builds a new plan from the runner's current answers, keeping what already
+ * happened. Every planned workout from `today` on is replaced, including
+ * edited ones; completed, partial and skipped workouts keep their results,
+ * and a new workout never lands on a date a kept workout already uses. The
+ * new plan starts this week (its progression restarts at week 1). With no
+ * stored plan it is simply the generated one.
+ */
+export async function createNewPlan(
+  plan: Plan | null,
+  profile: RunnerProfile,
+  today: ISODate = todayISO(),
+): Promise<Plan> {
+  const fresh = await generatePlan(profile, today);
+  if (!plan) return fresh;
+
+  const kept = plan.workouts.filter((w) => !isReplaceable(w, today));
+  const taken = new Set(kept.map((w) => w.date));
+  const added = fresh.workouts.filter(
+    (w) => w.date >= today && !taken.has(w.date),
+  );
+
+  return {
+    ...fresh,
+    workouts: [...kept, ...added].sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+/**
  * Rebuilds the plan after the runner's answers changed. Only the workouts
  * that are still ahead, planned and not edited are replaced: past days,
  * completed, skipped and edited workouts stay exactly as they are. The
