@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
+import type { Workout } from '../coach/plan';
 import { colors, motion, typography } from '../theme';
 import TopBar from '../components/TopBar';
 import OnboardingChat from '../components/OnboardingChat';
@@ -34,7 +35,7 @@ const SETTINGS_BUTTON_SIZE = 34;
  * Later visits open the plan directly.
  */
 export default function PlanScreen({ navigation }: Props) {
-  const { status, profile, plan, confirm, finish, reset, refresh } =
+  const { status, profile, plan, confirm, finish, reset, refresh, savePlan } =
     usePlanOnboarding();
   const reduceMotion = useReduceMotion();
   const [today] = useState(todayISO);
@@ -79,6 +80,18 @@ export default function PlanScreen({ navigation }: Props) {
   const handleOpenProfile = useCallback(
     () => navigation.navigate('Profile'),
     [navigation],
+  );
+
+  // An edited workout replaces the one with the same id.
+  const handleSaveWorkout = useCallback(
+    (workout: Workout) => {
+      if (!plan) return;
+      savePlan({
+        ...plan,
+        workouts: plan.workouts.map((w) => (w.id === workout.id ? workout : w)),
+      });
+    },
+    [plan, savePlan],
   );
 
   // No structured execution yet: every workout starts a free run.
@@ -136,10 +149,12 @@ export default function PlanScreen({ navigation }: Props) {
           <EnterView animate={cameFromChat} reduceMotion={reduceMotion}>
             <PlanOverview
               plan={plan}
+              profile={profile}
               today={today}
               gentle={profile.injuryStatus === 'hurts_now'}
               reduceMotion={reduceMotion}
               onStartWorkout={handleStartWorkout}
+              onSaveWorkout={handleSaveWorkout}
             />
           </EnterView>
         ) : (

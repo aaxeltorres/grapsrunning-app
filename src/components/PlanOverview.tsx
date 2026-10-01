@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
@@ -21,6 +21,8 @@ import {
   planDayMessage,
   type PlanDayMessageKey,
 } from '../coach/planOnboardingScript';
+import type { RunnerProfile } from '../coach/runnerProfile';
+import { suggestedWorkout } from '../coach/workoutEditor';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
 import {
   addMonths,
@@ -29,11 +31,12 @@ import {
   startOfMonth,
   type ISODate,
 } from '../utils/dates';
-import { colors, spacing, typography } from '../theme';
+import { colors, motion, spacing, typography } from '../theme';
 import ChatBubble from './ChatBubble';
 import MikeAvatar from './MikeAvatar';
 import { PlanMonthCalendar, PlanWeekStrip } from './PlanCalendar';
 import SegmentedControl from './SegmentedControl';
+import WorkoutEditorSheet from './WorkoutEditorSheet';
 import WorkoutCard, {
   formatKm,
   formatMinutes,
@@ -64,20 +67,26 @@ function mikeMessageKey(
 
 type Props = {
   plan: Plan;
+  /** Their answers decide which run types the editor offers. */
+  profile: RunnerProfile;
   today: ISODate;
   /** An injury hurts now: Mike reminds the user to take it easy. */
   gentle: boolean;
   reduceMotion: boolean;
   onStartWorkout: (workout: Workout) => void;
+  /** An edited (or reset) workout, to replace the one with the same id. */
+  onSaveWorkout: (workout: Workout) => void;
 };
 
 /** The training plan: Week and Month views of the user's workouts. */
 export default function PlanOverview({
   plan,
+  profile,
   today,
   gentle,
   reduceMotion,
   onStartWorkout,
+  onSaveWorkout,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<PlanView>('week');
@@ -100,6 +109,55 @@ export default function PlanOverview({
     selectedDate,
   );
 
+  // Only planned training days can be edited, not rest, completed or
+  // skipped ones.
+  const canEdit =
+    selectedWorkout !== undefined &&
+    selectedWorkout.type !== 'rest' &&
+    selectedWorkout.status === 'planned';
+
+  // The editor keeps its workout while the sheet animates out.
+  const [editor, setEditor] = useState<{
+    workout: Workout | null;
+    visible: boolean;
+    openCount: number;
+  }>({ workout: null, visible: false, openCount: 0 });
+
+  const openEditor = () => {
+    if (!selectedWorkout || !canEdit) return;
+    setEditor((current) =>
+      current.visible
+        ? current
+        : {
+            workout: selectedWorkout,
+            visible: true,
+            openCount: current.openCount + 1,
+          },
+    );
+  };
+  const closeEditor = () =>
+    setEditor((current) => ({ ...current, visible: false }));
+  const handleEditorClosed = () =>
+    setEditor((current) =>
+      current.visible ? current : { ...current, workout: null },
+    );
+  const handleSaveEdit = (workout: Workout) => {
+    onSaveWorkout(workout);
+    closeEditor();
+  };
+  const handleResetEdit = async (workout: Workout) => {
+    closeEditor();
+    const suggested = await suggestedWorkout(plan, profile, workout.date);
+    if (!suggested) return;
+    // Same day, same id and status; only what the generator decides returns.
+    onSaveWorkout({
+      ...suggested,
+      id: workout.id,
+      status: workout.status,
+      edited: false,
+    });
+  };
+
   // Another month never contains the selection, so moving to it selects
   // its first workout (or its first day when nothing is planned there).
   const changeMonth = useCallback(
@@ -121,96 +179,175 @@ export default function PlanOverview({
   );
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: insets.bottom + spacing.xl },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <SegmentedControl
-        options={VIEW_OPTIONS}
-        value={view}
-        onChange={setView}
+    <>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + spacing.xl },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <SegmentedControl
+          options={VIEW_OPTIONS}
+          value={view}
+          onChange={setView}
+          reduceMotion={reduceMotion}
+        />
+
+        <FadeIn key={view} reduceMotion={reduceMotion}>
+          {view === 'week' ? (
+            <View style={styles.section}>
+              <PlanWeekStrip
+                selectedDate={selectedDate}
+                today={today}
+                workoutFor={workoutFor}
+                onSelect={setSelectedDate}
+              />
+
+              <View style={styles.mikeRow}>
+                <MikeAvatar />
+                <View style={styles.mikeBubble}>
+                  {/* Keyed by message, so a new line pops in like a chat. */}
+                  <ChatBubble
+                    key={messageText}
+                    text={messageText}
+                    sender="mike"
+                    reduceMotion={reduceMotion}
+                  />
+                </View>
+              </View>
+
+              <Pulse
+                id={selectedWorkout?.id}
+                content={workoutContent(selectedWorkout)}
+                reduceMotion={reduceMotion}
+              >
+                <WorkoutCard
+                  date={selectedDate}
+                  today={today}
+                  workout={selectedWorkout}
+                  onStart={
+                    selectedWorkout
+                      ? () => onStartWorkout(selectedWorkout)
+                      : undefined
+                  }
+                  onEdit={canEdit ? openEditor : undefined}
+                />
+              </Pulse>
+
+              {comingUp.length > 0 && (
+                <View>
+                  <Text
+                    accessibilityRole="header"
+                    style={[typography.subheadline, styles.sectionTitle]}
+                  >
+                    Coming up
+                  </Text>
+                  {comingUp.map((workout, index) => (
+                    <ComingUpRow
+                      key={workout.id}
+                      workout={workout}
+                      showDivider={index > 0}
+                      onPress={() => setSelectedDate(workout.date)}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.section}>
+              <PlanMonthCalendar
+                month={visibleMonth}
+                selectedDate={selectedDate}
+                today={today}
+                workoutFor={workoutFor}
+                onSelect={setSelectedDate}
+                onChangeMonth={changeMonth}
+              />
+              <WorkoutSummaryCard
+                date={selectedDate}
+                today={today}
+                workout={selectedWorkout}
+                onPress={() => setView('week')}
+              />
+            </View>
+          )}
+        </FadeIn>
+      </ScrollView>
+
+      <WorkoutEditorSheet
+        workout={editor.workout}
+        visible={editor.visible}
+        contentKey={editor.openCount}
+        plan={plan}
+        profile={profile}
+        onSave={handleSaveEdit}
+        onReset={handleResetEdit}
+        onDismiss={closeEditor}
+        onClosed={handleEditorClosed}
         reduceMotion={reduceMotion}
       />
+    </>
+  );
+}
 
-      <FadeIn key={view} reduceMotion={reduceMotion}>
-        {view === 'week' ? (
-          <View style={styles.section}>
-            <PlanWeekStrip
-              selectedDate={selectedDate}
-              today={today}
-              workoutFor={workoutFor}
-              onSelect={setSelectedDate}
-            />
+/** What the card shows for a workout, to notice when an edit changes it. */
+function workoutContent(workout?: Workout) {
+  return workout
+    ? `${workout.type}:${workout.edited ? 1 : 0}:${Math.round(totalDuration(workout))}:${Math.round(totalDistance(workout))}`
+    : '';
+}
 
-            <View style={styles.mikeRow}>
-              <MikeAvatar />
-              <View style={styles.mikeBubble}>
-                {/* Keyed by message, so a new line pops in like a chat. */}
-                <ChatBubble
-                  key={messageText}
-                  text={messageText}
-                  sender="mike"
-                  reduceMotion={reduceMotion}
-                />
-              </View>
-            </View>
+/**
+ * A quick pop when the same workout's content changes (an edit or a
+ * reset), so the card visibly takes the new values. Switching to another
+ * day does not pulse.
+ */
+function Pulse({
+  id,
+  content,
+  reduceMotion,
+  children,
+}: {
+  id?: string;
+  content: string;
+  reduceMotion: boolean;
+  children: React.ReactNode;
+}) {
+  const pop = useRef(new Animated.Value(1)).current;
+  const previous = useRef({ id, content });
 
-            <WorkoutCard
-              date={selectedDate}
-              today={today}
-              workout={selectedWorkout}
-              onStart={
-                selectedWorkout
-                  ? () => onStartWorkout(selectedWorkout)
-                  : undefined
-              }
-              // TODO: open the workout editor once it exists.
-              onEdit={undefined}
-            />
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { id, content };
+    if (reduceMotion || before.id !== id || before.content === content) return;
+    pop.setValue(0);
+    const animation = Animated.spring(pop, {
+      toValue: 1,
+      ...motion.springBounce,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [id, content, reduceMotion, pop]);
 
-            {comingUp.length > 0 && (
-              <View>
-                <Text
-                  accessibilityRole="header"
-                  style={[typography.subheadline, styles.sectionTitle]}
-                >
-                  Coming up
-                </Text>
-                {comingUp.map((workout, index) => (
-                  <ComingUpRow
-                    key={workout.id}
-                    workout={workout}
-                    showDivider={index > 0}
-                    onPress={() => setSelectedDate(workout.date)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <PlanMonthCalendar
-              month={visibleMonth}
-              selectedDate={selectedDate}
-              today={today}
-              workoutFor={workoutFor}
-              onSelect={setSelectedDate}
-              onChangeMonth={changeMonth}
-            />
-            <WorkoutSummaryCard
-              date={selectedDate}
-              today={today}
-              workout={selectedWorkout}
-              onPress={() => setView('week')}
-            />
-          </View>
-        )}
-      </FadeIn>
-    </ScrollView>
+  return (
+    <Animated.View
+      style={{
+        opacity: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
+        transform: [
+          {
+            scale: pop.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.96, 1],
+            }),
+          },
+        ],
+      }}
+    >
+      {children}
+    </Animated.View>
   );
 }
 

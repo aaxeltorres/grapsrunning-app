@@ -70,6 +70,7 @@ type Props = {
   /** `undefined` when the day is outside the plan. */
   workout?: Workout;
   onStart?: () => void;
+  /** Opens the editor. Left out when the workout can't be edited. */
   onEdit?: () => void;
 };
 
@@ -124,6 +125,11 @@ export default function WorkoutCard({
             </Text>
           </View>
         )}
+        {!isDone && !isSkipped && workout.edited && (
+          <View style={[styles.statusPill, styles.editedPill]}>
+            <Text style={[typography.caption, styles.statusText]}>Edited</Text>
+          </View>
+        )}
       </View>
       <Text style={[typography.largeTitle, styles.title]}>
         {displayName(workout)}
@@ -151,12 +157,14 @@ export default function WorkoutCard({
             leftAdornment={<View style={styles.playIcon} />}
             style={styles.startButton}
           />
-          <Button
-            label="Edit"
-            variant="outline"
-            onPress={onEdit}
-            style={styles.editButton}
-          />
+          {onEdit && (
+            <Button
+              label="Edit"
+              variant="outline"
+              onPress={onEdit}
+              style={styles.editButton}
+            />
+          )}
         </View>
       )}
     </View>
@@ -326,6 +334,9 @@ const styles = StyleSheet.create({
   },
   skippedPill: {
     backgroundColor: colors.surfaceGray,
+  },
+  editedPill: {
+    backgroundColor: colors.planSegmentMuted,
   },
   statusText: {
     color: colors.textPrimary,

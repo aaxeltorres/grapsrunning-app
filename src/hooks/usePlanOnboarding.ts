@@ -121,6 +121,16 @@ export function usePlanOnboarding() {
     }
   }, []);
 
+  /** Replaces the plan (e.g. after a workout was edited) and saves it. */
+  const savePlan = useCallback(async (next: Plan) => {
+    setPlan(next);
+    try {
+      await planStorage.save(next);
+    } catch (error) {
+      console.warn('Failed to save plan', error);
+    }
+  }, []);
+
   /** Switches the screen from the onboarding chat to the plan. */
   const finish = useCallback(() => setStatus('done'), []);
 
@@ -140,5 +150,5 @@ export function usePlanOnboarding() {
     setStatus('pending');
   }, []);
 
-  return { status, profile, plan, confirm, finish, reset, refresh };
+  return { status, profile, plan, confirm, finish, reset, refresh, savePlan };
 }
