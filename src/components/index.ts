@@ -21,3 +21,6 @@ export { default as SegmentedControl } from './SegmentedControl';
 export { default as WorkoutCard } from './WorkoutCard';
 export { default as PlanOverview } from './PlanOverview';
 export { default as AnswerRow } from './AnswerRow';
+export { default as WorkoutTypeCarousel } from './WorkoutTypeCarousel';
+export { default as DurationBar } from './DurationBar';
+export { default as WorkoutEditorSheet } from './WorkoutEditorSheet';
