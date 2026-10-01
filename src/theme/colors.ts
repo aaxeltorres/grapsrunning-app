@@ -66,6 +66,12 @@ export const colors = {
   planSegmentMuted: '#FFD7B0', // warm-up / cool-down part of the segment bar
   planSelectedDayBg: '#E3F2FD', // selected (not today) day, soft Coach blue
   segmentRecovery: '#5AC8FA', // recovery jogs and walks on the workout run screen, calm on dark and light
+  // Training zones Z1-Z5 (run screen chips and timeline), easy to hard
+  zone1: '#5AC8FA', // same cyan as segmentRecovery
+  zone2: '#2ECC71', // same green as workoutEasy
+  zone3: '#9B6BE0', // same purple as workoutTempo
+  zone4: '#FF8A3D', // same orange as workoutIntervals
+  zone5: '#FF453A', // same red as alertRedDark, readable on both themes
 
   // Bottom sheets
   sheetBackdrop: 'rgba(0,0,0,0.4)',

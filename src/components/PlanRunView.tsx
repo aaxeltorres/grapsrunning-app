@@ -2,21 +2,30 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import type { RunViewProps } from '../run/types';
 import { displayName, type Workout } from '../coach/plan';
+import { ZONE_INFO } from '../coach/zones';
 import {
   buildRunSegments,
   formatSegmentTarget,
   type RunSegment,
 } from '../run/workoutSegments';
+import {
+  nextWork,
+  sessionStyle,
+  stepLayout,
+  zoneTimeline,
+  type StepLayout,
+} from '../run/stepBehavior';
+import { formatEffortTime, setSummary, type SetSummary } from '../run/repResults';
 import { useWorkoutRun } from '../hooks/useWorkoutRun';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { colors, motion, radius, spacing, typography } from '../theme';
-import { formatClock } from '../utils/format';
-import { mediumImpact, successNotification } from '../utils/haptics';
+import { formatClock, formatPaceSeconds } from '../utils/format';
 import AlertBlock from './AlertBlock';
 import BasicRunView from './BasicRunView';
 import Button from './Button';
 import WorkoutProgressBar, { SEGMENT_TONE_COLORS } from './WorkoutProgressBar';
 import { formatPace } from './WorkoutCard';
+import ZoneTimeline, { ZONE_COLORS } from './ZoneTimeline';
 
 const BAR_HEIGHT = 8;
 /** The countdown bar glides between tracking ticks (about one a second). */
@@ -24,11 +33,20 @@ const DRAIN_MS = 1000;
 const SEGMENT_ENTER_MS = 320;
 const SEGMENT_ENTER_PX = 10;
 const TONE_DOT = 10;
+/** Done and Ready: large and easy to hit while running. */
+const MANUAL_BUTTON_HEIGHT = 76;
 
 /**
- * Run screen for "Today's workout": runs the workout segment by segment
- * with a countdown, the rep counter, the next segment, a bar for the whole
- * workout and the target pace with the goal runs' silent red alert.
+ * Run screen for "Today's workout": runs the workout step by step, and
+ * each step shows what matters for it (see stepBehavior.ts):
+ * - intervals: a countdown by time or distance, "Rep i of n", "Set j of m";
+ * - rests: a calm countdown to the next rep with a preview of it, and the
+ *   set summary in a macro rest;
+ * - manual steps: an elapsed timer and one large Done or Ready button;
+ * - Z2 sessions: the distance run as the hero;
+ * - consecutive-zone sessions: the zone, its time left and a timeline.
+ * Every step shows its zone and target pace (zones are pace ranges, no
+ * heart rate yet), with the goal runs' silent red alert where it applies.
  */
 export default function PlanRunView(props: RunViewProps) {
   const { workout } = props;
@@ -38,20 +56,26 @@ export default function PlanRunView(props: RunViewProps) {
   return <PlanRun {...props} workout={workout} segments={segments} />;
 }
 
-/** "1:30" / "12:05" left, "320 m" / "1.25 km" left, or a manual step's prompt. */
+/** "1:30" / "12:05" left, or "320 m" / "1.25 km" left. */
 function countdown(segment: RunSegment, remaining: number) {
-  if (segment.target.type === 'manual') {
-    return { value: segment.end === 'ready' ? 'Ready?' : 'Go!', unit: '' };
+  if (segment.target.type === 'distance') {
+    return remaining < 1000
+      ? { value: String(Math.ceil(remaining / 10) * 10), unit: 'm' }
+      : { value: (remaining / 1000).toFixed(2), unit: 'km' };
   }
-  if (segment.target.type === 'duration') {
-    const total = Math.ceil(remaining);
-    const clock = formatClock(total);
-    // Drop the leading zero of the minutes: "1:30", not "01:30".
-    return { value: total < 600 ? clock.replace(/^0/, '') : clock, unit: '' };
-  }
-  return remaining < 1000
-    ? { value: String(Math.ceil(remaining / 10) * 10), unit: 'm' }
-    : { value: (remaining / 1000).toFixed(2), unit: 'km' };
+  return { value: shortClock(Math.ceil(remaining)), unit: '' };
+}
+
+/** Drop the leading zero of the minutes: "1:30", not "01:30". */
+function shortClock(seconds: number) {
+  const clock = formatClock(Math.max(0, seconds));
+  return seconds < 600 ? clock.replace(/^0/, '') : clock;
+}
+
+function counterText(segment: RunSegment) {
+  if (!segment.rep) return null;
+  const rep = `Rep ${segment.rep.number} of ${segment.rep.of}`;
+  return segment.set ? `Set ${segment.set.number} of ${segment.set.of} · ${rep}` : rep;
 }
 
 function PlanRun({
@@ -70,6 +94,8 @@ function PlanRun({
   const run = useWorkoutRun(segments, runState, distanceKm, durationSeconds);
   const [keepGoing, setKeepGoing] = useState(false);
   const { segment, next, progress, complete } = run;
+  const style = useMemo(() => sessionStyle(segments), [segments]);
+  const layout: StepLayout | null = segment ? stepLayout(segment, style) : null;
 
   const theme = {
     text: themeAnim.interpolate({
@@ -89,16 +115,6 @@ function PlanRun({
       outputRange: [colors.progressTrack, colors.runDarkTrack],
     }),
   };
-
-  // Haptics on segment changes and at the end of the workout.
-  useEffect(
-    () =>
-      run.events.subscribe((event) => {
-        if (event.type === 'segmentStart' && event.segment.index > 0) mediumImpact();
-        if (event.type === 'workoutComplete') successNotification();
-      }),
-    [run.events],
-  );
 
   // The countdown bar drains smoothly, and refills at a new segment.
   const index = segment?.index ?? segments.length;
@@ -146,18 +162,23 @@ function PlanRun({
   };
 
   const handleFinish = () => {
-    const summary = run.outcome();
+    // Read before finishing: Finish itself cuts the current step short.
+    const { completedAll } = run.outcome();
     run.finishEarly();
-    onFinish(summary);
+    onFinish({ completedAll, reps: run.recordedReps() });
   };
 
   const paused = runState === 'paused';
   const showWorkoutChoice = complete && !keepGoing && runState === 'running';
-  // A manual segment ends on a tap; until the run task adds its own
-  // control, the skip link is that tap (and doesn't count as a skip).
-  const manualEnd = segment && segment.end !== 'auto' ? segment.end : null;
+  const manualEnd = layout === 'manual' && segment ? segment.end : null;
   const waitingForGps =
     segment?.target.type === 'distance' && distanceKm === 0 && runState === 'running';
+  // The rep after a rest, and in a macro rest how the last set went.
+  const upcoming = segment?.rest !== null && segment ? nextWork(segments, index) : null;
+  const summary =
+    segment?.rest === 'macro' && segment.set ? setSummary(run.reps, segment.set) : null;
+  // Rests and manual steps never alert; their zone (if any) is only a hint.
+  const showPaceBlock = segment?.paceRange && segment.rest === null && layout !== 'manual';
 
   return (
     <View style={styles.content}>
@@ -170,14 +191,30 @@ function PlanRun({
 
       <View style={styles.main}>
         <Animated.View style={[styles.segment, enterStyle]}>
-          {segment ? (
-            <SegmentBlock
-              segment={segment}
-              remaining={progress.remaining}
-              drain={drain}
-              theme={theme}
-              waitingForGps={waitingForGps}
-            />
+          {segment && layout ? (
+            <>
+              <StepHeader segment={segment} layout={layout} theme={theme} />
+              <StepHero
+                segment={segment}
+                layout={layout}
+                remaining={progress.remaining}
+                elapsed={progress.elapsedSeconds}
+                distanceKm={distanceKm}
+                drain={drain}
+                theme={theme}
+              />
+              {layout === 'zoneBlock' && (
+                <ZoneTimeline blocks={zoneTimeline(segments, index)} labelColor={theme.secondary} />
+              )}
+              <StepFooter
+                segment={segment}
+                layout={layout}
+                upcoming={upcoming}
+                summary={summary}
+                waitingForGps={waitingForGps}
+                theme={theme}
+              />
+            </>
           ) : (
             <View style={styles.doneBlock}>
               <Animated.Text style={[styles.doneTitle, { color: theme.text }]}>
@@ -190,7 +227,7 @@ function PlanRun({
           )}
         </Animated.View>
 
-        {segment?.paceRange && (
+        {showPaceBlock && segment?.paceRange && (
           <AlertBlock alert={run.paceAlert} reduceMotion={reduceMotion} red={theme.red}>
             <View style={styles.paceRow}>
               <Animated.Text style={[typography.subheadline, { color: theme.secondary }]}>
@@ -219,8 +256,12 @@ function PlanRun({
             style={[typography.subheadline, { color: theme.secondary }]}
           >
             {segment
-              ? next
-                ? `Next: ${next.label} · ${formatSegmentTarget(next)}`
+              ? upcoming
+                ? ' ' // the rest already previews the next rep
+                : next
+                ? `Next: ${next.label}${
+                    next.zone && !next.label.startsWith('Zone') ? ` · Z${next.zone}` : ''
+                  } · ${formatSegmentTarget(next)}`
                 : 'Last segment'
               : ' '}
           </Animated.Text>
@@ -232,30 +273,41 @@ function PlanRun({
           />
         </View>
 
+        {/* Whole-run totals: rests count toward time and distance. */}
         <View style={styles.totals}>
           <SmallMetric value={formatClock(durationSeconds)} label="Time" theme={theme} />
-          <SmallMetric value={`${distanceKm.toFixed(2)} km`} label="Distance" theme={theme} />
-          {!segment?.paceRange && (
+          {layout !== 'distance' && (
+            <SmallMetric value={`${distanceKm.toFixed(2)} km`} label="Distance" theme={theme} />
+          )}
+          {!showPaceBlock && (
             <SmallMetric value={`${paceLabel} /km`} label="Pace" theme={theme} />
           )}
         </View>
       </View>
 
       <View style={styles.controls}>
-        {!complete && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              manualEnd === 'done' ? 'Done' : manualEnd === 'ready' ? 'Ready' : 'Skip segment'
-            }
-            hitSlop={12}
-            onPress={manualEnd ? run.confirm : run.skip}
-            style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
-          >
-            <Animated.Text style={[typography.headline, { color: theme.secondary }]}>
-              {manualEnd === 'done' ? 'Done ›' : manualEnd === 'ready' ? 'Ready ›' : 'Skip segment ›'}
-            </Animated.Text>
-          </Pressable>
+        {manualEnd && !paused ? (
+          <Button
+            label={manualEnd === 'done' ? 'Done' : 'Ready'}
+            variant="accent"
+            onPress={run.confirm}
+            style={styles.manualButton}
+          />
+        ) : (
+          !complete &&
+          !manualEnd && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Skip segment"
+              hitSlop={12}
+              onPress={run.skip}
+              style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
+            >
+              <Animated.Text style={[typography.headline, { color: theme.secondary }]}>
+                Skip segment ›
+              </Animated.Text>
+            </Pressable>
+          )
         )}
         <View style={styles.controlsRow}>
           {showWorkoutChoice ? (
@@ -296,79 +348,213 @@ function PlanRun({
   );
 }
 
+/** Rests stay calm; a zoned effort takes its zone's color; else its tone. */
+function stepColor(segment: RunSegment) {
+  if (segment.rest !== null) return colors.segmentRecovery;
+  if (segment.zone !== null) return ZONE_COLORS[segment.zone];
+  return SEGMENT_TONE_COLORS[segment.tone];
+}
+
 type Themed = Animated.AnimatedInterpolation<string | number>;
 type Theme = { text: Themed; secondary: Themed; red: Themed; track: Themed };
 
-/** Segment name, rep counter, the countdown and its draining bar. */
-function SegmentBlock({
+/** The step's name, its zone chip, and the rep / set counter. */
+function StepHeader({
   segment,
-  remaining,
-  drain,
+  layout,
   theme,
-  waitingForGps,
 }: {
   segment: RunSegment;
-  remaining: number;
-  drain: Animated.Value;
+  layout: StepLayout;
   theme: Theme;
-  waitingForGps: boolean;
 }) {
-  const tone = SEGMENT_TONE_COLORS[segment.tone];
-  const { value, unit } = countdown(segment, remaining);
+  const counter = counterText(segment);
+  const title =
+    layout === 'zoneBlock' && segment.zone !== null && segment.kind === 'steady'
+      ? ZONE_INFO[segment.zone].name
+      : segment.label;
   return (
-    <>
-      <View style={styles.segmentHeader}>
-        <View style={styles.labelRow}>
-          <View style={[styles.toneDot, { backgroundColor: tone }]} />
-          <Animated.Text style={[typography.title2, { color: theme.text }]}>
-            {segment.label}
-          </Animated.Text>
-        </View>
-        {segment.rep && (
-          <Animated.Text style={[typography.headline, styles.tabular, { color: theme.secondary }]}>
-            {segment.set
-              ? `Set ${segment.set.number}/${segment.set.of} · Rep ${segment.rep.number}/${segment.rep.of}`
-              : `Rep ${segment.rep.number} of ${segment.rep.of}`}
-          </Animated.Text>
+    <View style={styles.segmentHeader}>
+      <View style={styles.labelRow}>
+        <View style={[styles.toneDot, { backgroundColor: stepColor(segment) }]} />
+        <Animated.Text
+          numberOfLines={1}
+          style={[typography.title2, styles.flexShrink, { color: theme.text }]}
+        >
+          {title}
+        </Animated.Text>
+        {segment.zone !== null && (
+          <View
+            style={[styles.zoneChip, { backgroundColor: ZONE_COLORS[segment.zone] }]}
+            accessible
+            accessibilityLabel={`Zone ${segment.zone}`}
+          >
+            <Animated.Text style={[typography.caption, styles.zoneChipText]}>
+              {`Z${segment.zone}`}
+            </Animated.Text>
+          </View>
         )}
       </View>
+      {counter && (
+        <Animated.Text style={[typography.headline, styles.tabular, { color: theme.secondary }]}>
+          {counter}
+        </Animated.Text>
+      )}
+    </View>
+  );
+}
 
+/** The big number of the step: countdown, elapsed timer or distance. */
+function StepHero({
+  segment,
+  layout,
+  remaining,
+  elapsed,
+  distanceKm,
+  drain,
+  theme,
+}: {
+  segment: RunSegment;
+  layout: StepLayout;
+  remaining: number;
+  elapsed: number;
+  distanceKm: number;
+  drain: Animated.Value;
+  theme: Theme;
+}) {
+  const calm = segment.rest !== null;
+  const barColor = stepColor(segment);
+
+  if (layout === 'manual') {
+    // No end to count down to: how long it has been, until the tap.
+    return (
       <View
         style={styles.countdownRow}
         accessible
-        accessibilityLabel={
-          segment.end !== 'auto'
-            ? `Tap ${segment.end === 'done' ? 'Done' : 'Ready'} when finished`
-            : `${value} ${unit === 'm' ? 'meters' : unit === 'km' ? 'kilometers' : ''} left`
-        }
+        accessibilityLabel={`${formatClock(elapsed)} elapsed. Tap ${
+          segment.end === 'done' ? 'Done' : 'Ready'
+        } when finished`}
       >
         <Animated.Text
           numberOfLines={1}
           adjustsFontSizeToFit
-          style={[styles.countdown, { color: theme.text }]}
+          style={[styles.countdown, calm && styles.calmNumber, { color: theme.text }]}
         >
-          {value}
+          {shortClock(elapsed)}
         </Animated.Text>
-        {unit !== '' && (
+        <Animated.Text style={[typography.title2, { color: theme.secondary }]}>
+          {segment.end === 'ready' ? 'resting' : 'elapsed'}
+        </Animated.Text>
+      </View>
+    );
+  }
+
+  const left = countdown(segment, remaining);
+  const hero =
+    layout === 'distance'
+      ? { value: distanceKm.toFixed(2), unit: 'km', label: `${distanceKm.toFixed(2)} kilometers run` }
+      : {
+          ...left,
+          label: `${left.value} ${left.unit === 'm' ? 'meters' : left.unit === 'km' ? 'kilometers' : ''} left`,
+        };
+
+  return (
+    <>
+      <View style={styles.countdownRow} accessible accessibilityLabel={hero.label}>
+        <Animated.Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          style={[styles.countdown, calm && styles.calmNumber, { color: theme.text }]}
+        >
+          {hero.value}
+        </Animated.Text>
+        {hero.unit !== '' && (
           <Animated.Text style={[typography.title2, { color: theme.secondary }]}>
-            {unit}
+            {hero.unit}
           </Animated.Text>
         )}
       </View>
-
       <Animated.View style={[styles.drainTrack, { backgroundColor: theme.track }]}>
         <Animated.View
-          style={[
-            styles.drainFill,
-            { backgroundColor: tone, transform: [{ scaleX: drain }] },
-          ]}
+          style={[styles.drainFill, { backgroundColor: barColor, transform: [{ scaleX: drain }] }]}
         />
       </Animated.View>
-
-      <Animated.Text style={[typography.caption, { color: theme.secondary }]}>
-        {waitingForGps ? 'Waiting for GPS…' : `${formatSegmentTarget(segment)} total`}
-      </Animated.Text>
+      {layout === 'distance' && (
+        <Animated.Text style={[typography.subheadline, { color: theme.secondary }]}>
+          {`${left.value}${left.unit ? ` ${left.unit}` : ''} left in this block`}
+        </Animated.Text>
+      )}
     </>
+  );
+}
+
+/**
+ * Under the hero: the zone hint, why there is no pace target, the next
+ * rep during a rest, the set summary in a macro rest, or the step total.
+ */
+function StepFooter({
+  segment,
+  layout,
+  upcoming,
+  summary,
+  waitingForGps,
+  theme,
+}: {
+  segment: RunSegment;
+  layout: StepLayout;
+  upcoming: RunSegment | null;
+  summary: SetSummary | null;
+  waitingForGps: boolean;
+  theme: Theme;
+}) {
+  const lines: string[] = [];
+  if (segment.rest !== null) {
+    // Active rests show their zone as a hint; nothing alerts.
+    if (segment.zone !== null) {
+      lines.push(
+        segment.paceRange
+          ? `Easy in Z${segment.zone} · ${formatPace(segment.paceRange)} /km`
+          : `Easy in Z${segment.zone}`,
+      );
+    } else if (layout === 'manual') {
+      lines.push('Full recovery: take all the time you need, then tap Ready.');
+    }
+    if (summary) {
+      const set = segment.set ? `Set ${segment.set.number} done · ` : '';
+      lines.push(
+        summary.avgPaceSecPerKm !== null
+          ? `${set}${summary.reps} reps · avg ${formatPaceSeconds(summary.avgPaceSecPerKm)} /km`
+          : `${set}${summary.reps} reps · avg ${formatEffortTime(summary.avgSeconds)}`,
+      );
+    }
+    if (upcoming) {
+      const zone = upcoming.zone ? ` · Z${upcoming.zone}` : '';
+      const pace = upcoming.paceRange ? ` · ${formatPace(upcoming.paceRange)}` : '';
+      lines.push(`Up next: ${upcoming.label} · ${formatSegmentTarget(upcoming)}${zone}${pace}`);
+    }
+  } else if (layout === 'manual') {
+    lines.push(
+      segment.target.type === 'manual' && segment.target.meters !== undefined
+        ? `Sprint ${segment.target.meters} m, then tap Done.`
+        : 'Tap Done when you finish.',
+    );
+  } else {
+    if (segment.zone !== null && !segment.paceRange) {
+      lines.push(`Z${segment.zone} · No pace target: too short for GPS`);
+    }
+    if (layout !== 'distance') {
+      lines.push(waitingForGps ? 'Waiting for GPS…' : `${formatSegmentTarget(segment)} total`);
+    }
+  }
+  if (lines.length === 0) return null;
+  return (
+    <View style={styles.footerLines}>
+      {lines.map((line) => (
+        <Animated.Text key={line} style={[typography.subheadline, { color: theme.secondary }]}>
+          {line}
+        </Animated.Text>
+      ))}
+    </View>
   );
 }
 
@@ -412,11 +598,10 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.md,
   },
+  // Name and zone on one line, the rep / set counter under it, so a long
+  // name and "Set 1 of 2 · Rep 3 of 8" never squeeze each other.
   segmentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+    gap: spacing.xxs,
   },
   labelRow: {
     flexDirection: 'row',
@@ -424,10 +609,22 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     flexShrink: 1,
   },
+  flexShrink: {
+    flexShrink: 1,
+  },
   toneDot: {
     width: TONE_DOT,
     height: TONE_DOT,
     borderRadius: TONE_DOT / 2,
+  },
+  zoneChip: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  zoneChipText: {
+    color: colors.white,
+    fontWeight: '700',
   },
   countdownRow: {
     flexDirection: 'row',
@@ -441,6 +638,10 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     fontVariant: ['tabular-nums'],
   },
+  // Rests: the same number, lighter, so the screen feels calmer.
+  calmNumber: {
+    fontWeight: '300',
+  },
   drainTrack: {
     width: '100%',
     height: BAR_HEIGHT,
@@ -452,6 +653,9 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: radius.pill,
     transformOrigin: 'left',
+  },
+  footerLines: {
+    gap: spacing.xxs,
   },
   doneBlock: {
     gap: spacing.xs,
@@ -496,6 +700,11 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  manualButton: {
+    width: '100%',
+    height: MANUAL_BUTTON_HEIGHT,
+    borderRadius: radius.button,
   },
   skip: {
     paddingVertical: spacing.xxs,

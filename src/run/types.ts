@@ -1,7 +1,7 @@
 import type { Animated } from 'react-native';
 import type { RunState } from '../hooks/useRunTracking';
 import type { RunGoal } from './goals';
-import type { Workout } from '../coach/plan';
+import type { RepResult, Workout } from '../coach/plan';
 
 /**
  * What the ActiveRun shell hands to every run view. The shell owns the
@@ -21,6 +21,9 @@ export type RunViewProps = {
   workout?: Workout;
   onPause: () => void;
   onResume: () => void;
-  /** Plan workout runs say whether every segment was run (otherwise it's partial). */
-  onFinish: (summary?: { completedAll: boolean }) => void;
+  /**
+   * Plan workout runs say whether every segment was run (otherwise it's
+   * partial) and hand over every work step as it was run.
+   */
+  onFinish: (summary?: { completedAll: boolean; reps?: RepResult[] }) => void;
 };
