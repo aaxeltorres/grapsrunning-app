@@ -3,13 +3,23 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors, radius } from '../theme';
 import type { RouteCoordinate } from '../navigation/types';
 
+const DEFAULT_HEIGHT = 260;
+
 type Props = {
   coordinates: RouteCoordinate[];
+  /** Card height; defaults to 260. */
+  height?: number;
 };
 
-export default function RunMap({ coordinates }: Props) {
+export default function RunMap({ coordinates, height = DEFAULT_HEIGHT }: Props) {
   return (
-    <View style={[styles.container, coordinates.length === 0 && styles.emptyContainer]}>
+    <View
+      style={[
+        styles.container,
+        { height },
+        coordinates.length === 0 && styles.emptyContainer,
+      ]}
+    >
       <Text style={styles.label}>
         {coordinates.length === 0 ? 'No route recorded' : 'Map preview unavailable on web'}
       </Text>
@@ -19,7 +29,7 @@ export default function RunMap({ coordinates }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    height: 260,
+    height: DEFAULT_HEIGHT,
     borderRadius: radius.lg,
     overflow: 'hidden',
     alignItems: 'center',

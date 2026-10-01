@@ -131,6 +131,25 @@ export function formatMonthLabel(iso: ISODate): string {
   return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/**
+ * "Today, 7:42 AM", "Yesterday, 7:42 AM", or "Tue, 29 Sep, 7:42 AM" for a
+ * moment in time (ms), in the device's local time.
+ */
+export function formatRunDateTime(timestamp: number, now: Date = new Date()): string {
+  const date = new Date(timestamp);
+  const hours = date.getHours();
+  const time = `${hours % 12 === 0 ? 12 : hours % 12}:${pad(date.getMinutes())} ${
+    hours < 12 ? 'AM' : 'PM'
+  }`;
+
+  const iso = toISODate(date);
+  const today = toISODate(now);
+  if (iso === today) return `Today, ${time}`;
+  if (iso === addDays(today, -1)) return `Yesterday, ${time}`;
+  const month = MONTHS[date.getMonth()].slice(0, 3);
+  return `${formatWeekdayShort(iso)}, ${date.getDate()} ${month}, ${time}`;
+}
+
 /** "Wednesday, October 30", for screen readers. */
 export function formatLongDate(iso: ISODate): string {
   const date = parseISODate(iso);

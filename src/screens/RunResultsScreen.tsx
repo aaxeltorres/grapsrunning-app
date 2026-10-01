@@ -1,159 +1,230 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, Animated, Easing } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
 import TopBar from '../components/TopBar';
-import MetricCard from '../components/MetricCard';
-import IconPlaceholder from '../components/IconPlaceholder';
-import Button from '../components/Button';
-import RunMap from '../components/RunMap';
+import RunRouteCard from '../components/RunRouteCard';
+import RunSplits from '../components/RunSplits';
 import GoalResultsSection from '../components/GoalResultsSection';
-import { formatPace } from '../utils/format';
+import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
+import { isRunTooShort } from '../run/splits';
+import { formatRunDateTime } from '../utils/dates';
+import { formatClock, formatPace } from '../utils/format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RunResults'>;
 
+const COUNT_UP_MS = 450;
+
+type Section = { key: string; node: React.ReactNode };
+
 export default function RunResultsScreen({ route, navigation }: Props) {
-  const { distanceKm, durationSeconds, route: routeCoordinates, goal } = route.params;
-  const paceLabel = formatPace(durationSeconds, distanceKm);
+  const {
+    distanceKm,
+    durationSeconds,
+    route: routeCoordinates,
+    goal,
+    startedAt,
+    calories,
+    splits = [],
+  } = route.params;
+  const reduceMotion = useReduceMotion();
+  const tooShort = isRunTooShort(distanceKm, durationSeconds);
 
-  const h = Math.floor(durationSeconds / 3600);
-  const m = Math.floor((durationSeconds % 3600) / 60);
-  const s = durationSeconds % 60;
-  const timeLabel = h > 0 
-    ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-    : `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
-  const anim1 = useRef(new Animated.Value(0)).current;
-  const anim2 = useRef(new Animated.Value(0)).current;
-  const anim3 = useRef(new Animated.Value(0)).current;
-  const anim4 = useRef(new Animated.Value(0)).current;
-
+  // Counts the hero distance up on entry; Reduce Motion shows it at once.
   const [displayDistance, setDisplayDistance] = useState(0);
-
   useEffect(() => {
-    // 1. Entrance animation sequence
-    Animated.stagger(100, [
-      Animated.timing(anim1, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-        useNativeDriver: true,
-      }),
-      Animated.timing(anim2, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-        useNativeDriver: true,
-      }),
-      Animated.timing(anim3, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-        useNativeDriver: true,
-      }),
-      Animated.timing(anim4, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // 2. Distance counter animation (Stretch goal)
-    const duration = 450;
-    const startTime = Date.now();
+    if (reduceMotion || tooShort) {
+      setDisplayDistance(distanceKm);
+      return;
+    }
+    const start = Date.now();
     let frame: number;
-
-    const animateNumber = () => {
-      const now = Date.now();
-      const progress = Math.min((now - startTime) / duration, 1);
-      // Apple-style easeOutQuad
-      const easeProgress = 1 - (1 - progress) * (1 - progress);
-      setDisplayDistance(distanceKm * easeProgress);
-
-      if (progress < 1) {
-        frame = requestAnimationFrame(animateNumber);
-      } else {
-        setDisplayDistance(distanceKm);
-      }
+    const tick = () => {
+      const progress = Math.min((Date.now() - start) / COUNT_UP_MS, 1);
+      setDisplayDistance(distanceKm * (1 - (1 - progress) * (1 - progress)));
+      if (progress < 1) frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(animateNumber);
-
+    frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [anim1, anim2, anim3, anim4, distanceKm]);
+  }, [distanceKm, reduceMotion, tooShort]);
 
-  const handleDone = () => {
-    navigation.popToTop();
-  };
-
-  const getAnimStyle = (anim: Animated.Value) => ({
-    opacity: anim,
-    transform: [
-      {
-        translateY: anim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [12, 0],
-        }),
-      },
-    ],
+  // Sections stack in this order. A new one (e.g. planned vs actual) is one
+  // more entry here; the header and the layout around it don't change.
+  const sections: Section[] = [
+    {
+      key: 'hero',
+      node: tooShort ? (
+        <ShortRun distanceKm={distanceKm} durationSeconds={durationSeconds} />
+      ) : (
+        <Hero distanceKm={distanceKm} displayDistance={displayDistance} />
+      ),
+    },
+  ];
+  if (!tooShort) {
+    sections.push({
+      key: 'stats',
+      node: (
+        <Stats
+          time={formatClock(durationSeconds)}
+          pace={formatPace(durationSeconds, distanceKm)}
+          calories={calories}
+        />
+      ),
+    });
+  }
+  sections.push({
+    key: 'route',
+    node: <RunRouteCard coordinates={routeCoordinates} />,
   });
+  if (goal && !tooShort) {
+    sections.push({
+      key: 'goals',
+      node: (
+        <GoalResultsSection
+          goal={goal}
+          distanceKm={distanceKm}
+          durationSeconds={durationSeconds}
+        />
+      ),
+    });
+  }
+  if (!tooShort && splits.some((split) => !split.partial)) {
+    sections.push({ key: 'splits', node: <RunSplits splits={splits} /> });
+  }
+
+  const entrance = useStaggeredEntrance(sections.length, reduceMotion);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <TopBar title="Run complete" />
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
+      <TopBar
+        title="Run complete"
+        right={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+            hitSlop={12}
+            onPress={() => navigation.popToTop()}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={[typography.headline, styles.done]}>Done</Text>
+          </Pressable>
+        }
+      />
+      {startedAt !== undefined && (
+        <Text style={[typography.subheadline, styles.subtitle]}>
+          {formatRunDateTime(startedAt)}
+        </Text>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Main metric card for distance */}
-        <Animated.View style={[styles.mainCard, getAnimStyle(anim1)]}>
-          <IconPlaceholder
-            size={36}
-            backgroundColor="rgba(255,255,255,0.35)"
-          />
-          <Text style={[typography.metricBig, styles.mainValue]}>
-            {displayDistance.toFixed(2)}
-          </Text>
-          <Text style={[typography.body, styles.mainUnit]}>Kilometers</Text>
-        </Animated.View>
-
-        {/* Small metric cards row */}
-        <Animated.View style={[styles.metricsRow, getAnimStyle(anim2)]}>
-          <MetricCard
-            value={paceLabel}
-            unit="min/km"
-            accentColor={colors.statPurple}
-            backgroundColor={colors.statPurpleBg}
-          />
-          <MetricCard
-            value={timeLabel}
-            unit="time"
-            accentColor={colors.statGreen}
-            backgroundColor={colors.statGreenBg}
-          />
-        </Animated.View>
-
-        {goal && (
-          <Animated.View style={[styles.goalsContainer, getAnimStyle(anim2)]}>
-            <GoalResultsSection
-              goal={goal}
-              distanceKm={distanceKm}
-              durationSeconds={durationSeconds}
-            />
+        {sections.map((section, i) => (
+          <Animated.View key={section.key} style={entrance[i]}>
+            {section.node}
           </Animated.View>
-        )}
-
-        <Animated.View style={[styles.mapContainer, getAnimStyle(anim3)]}>
-          <RunMap coordinates={routeCoordinates} />
-        </Animated.View>
-
-        <Animated.View style={[styles.buttonContainer, getAnimStyle(anim4)]}>
-          <Button label="Done" onPress={handleDone} variant="primary" />
-        </Animated.View>
+        ))}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** Total distance, the number the screen leads with. */
+function Hero({
+  distanceKm,
+  displayDistance,
+}: {
+  distanceKm: number;
+  displayDistance: number;
+}) {
+  return (
+    <View
+      style={styles.hero}
+      accessible
+      accessibilityLabel={`${distanceKm.toFixed(2)} kilometers`}
+    >
+      <Text
+        style={[typography.metricHero, styles.heroValue]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {displayDistance.toFixed(2)}
+      </Text>
+      <Text style={[typography.title2, styles.heroUnit]}>km</Text>
+    </View>
+  );
+}
+
+/** Time, average pace and calories in one quiet card. */
+function Stats({
+  time,
+  pace,
+  calories,
+}: {
+  time: string;
+  pace: string;
+  calories?: number;
+}) {
+  const cells = [
+    { label: 'Time', value: time },
+    { label: 'Avg pace /km', value: pace },
+    ...(calories !== undefined
+      ? [{ label: 'Calories', value: String(calories) }]
+      : []),
+  ];
+  return (
+    <View style={styles.stats}>
+      {cells.map((cell, i) => (
+        <React.Fragment key={cell.label}>
+          {i > 0 && <View style={styles.statDivider} />}
+          <View
+            style={styles.stat}
+            accessible
+            accessibilityLabel={`${cell.label}: ${cell.value}`}
+          >
+            <Text
+              style={[typography.title1, styles.statValue]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {cell.value}
+            </Text>
+            <Text style={[typography.caption, styles.statLabel]}>{cell.label}</Text>
+          </View>
+        </React.Fragment>
+      ))}
+    </View>
+  );
+}
+
+/** Shown instead of the hero when the run was too short to summarize. */
+function ShortRun({
+  distanceKm,
+  durationSeconds,
+}: {
+  distanceKm: number;
+  durationSeconds: number;
+}) {
+  const details = [
+    distanceKm > 0 ? `${Math.round(distanceKm * 1000)} m` : null,
+    durationSeconds > 0 ? formatClock(durationSeconds) : null,
+  ].filter(Boolean);
+  return (
+    <View style={styles.shortRun}>
+      <Text style={[typography.largeTitle, styles.shortTitle]}>That was a short one</Text>
+      <Text style={[typography.body, styles.shortText]}>
+        Run a little further and your summary will show up here.
+      </Text>
+      {details.length > 0 && (
+        <Text style={[typography.subheadline, styles.shortDetails]}>
+          {details.join(' · ')}
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -162,39 +233,73 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  done: {
+    color: colors.iosBlue,
+  },
+  pressed: {
+    opacity: 0.6,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.lg,
+    marginTop: -spacing.xs,
+  },
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.xl,
   },
-  mainCard: {
+  hero: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.xs,
+  },
+  heroValue: {
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
+  },
+  heroUnit: {
+    color: colors.textSecondary,
+  },
+  stats: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.statBlueEnd,
-    borderRadius: radius.xl,
-    paddingVertical: spacing.xl,
-    gap: spacing.xxs,
-    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceGray,
+    paddingVertical: spacing.lg,
   },
-  mainValue: {
-    color: colors.white,
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+  },
+  statValue: {
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
   },
-  mainUnit: {
-    color: 'rgba(255,255,255,0.9)',
+  statLabel: {
+    color: colors.textSecondary,
   },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: colors.divider,
   },
-  goalsContainer: {
-    marginBottom: spacing.md,
+  shortRun: {
+    gap: spacing.xs,
+    paddingTop: spacing.md,
   },
-  mapContainer: {
-    marginBottom: spacing.md,
+  shortTitle: {
+    color: colors.textPrimary,
   },
-  buttonContainer: {
-    marginTop: 'auto',
-    width: '100%',
+  shortText: {
+    color: colors.textSecondary,
+  },
+  shortDetails: {
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
   },
 });

@@ -57,6 +57,13 @@ export const typography = {
     fontWeight: '800',
     lineHeight: 46,
   } as TextStyle,
+  /** The one number a summary screen leads with. */
+  metricHero: {
+    fontFamily,
+    fontSize: 72,
+    fontWeight: '800',
+    lineHeight: 80,
+  } as TextStyle,
   metricSmall: {
     fontFamily,
     fontSize: 22,

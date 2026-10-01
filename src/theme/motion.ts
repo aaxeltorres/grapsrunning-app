@@ -9,6 +9,8 @@ export const motion = {
   easeStandard: Easing.bezier(0.4, 0.0, 0.2, 1),
   /** Active Run theme fade: light to dark on open and resume, back on pause. */
   durationRunTheme: 400,
+  /** Screen sections fading in one after another (e.g. Run results). */
+  durationEnter: 300,
   /** Quick, slightly bouncy spring for elements that pop into place. */
   springPop: { damping: 20, stiffness: 280, mass: 1 },
   /** Bouncier pop, e.g. an answer bubble filling in. */

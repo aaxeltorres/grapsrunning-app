@@ -4,16 +4,20 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import { radius, colors } from '../theme';
 import type { RouteCoordinate } from '../navigation/types';
 
+const DEFAULT_HEIGHT = 260;
+
 type Props = {
   coordinates: RouteCoordinate[];
+  /** Card height; defaults to 260. */
+  height?: number;
 };
 
-export default function RunMap({ coordinates }: Props) {
+export default function RunMap({ coordinates, height = DEFAULT_HEIGHT }: Props) {
   const mapRef = useRef<MapView | null>(null);
 
   if (coordinates.length === 0) {
     return (
-      <View style={[styles.container, styles.emptyContainer]}>
+      <View style={[styles.container, { height }, styles.emptyContainer]}>
         <Text style={styles.emptyText}>No route recorded</Text>
       </View>
     );
@@ -39,7 +43,7 @@ export default function RunMap({ coordinates }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height }]}>
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -77,7 +81,7 @@ export default function RunMap({ coordinates }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    height: 260,
+    height: DEFAULT_HEIGHT,
     borderRadius: radius.lg,
     overflow: 'hidden',
   },
