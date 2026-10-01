@@ -191,6 +191,45 @@ export function recapRows(
 }
 
 /**
+ * The first question that applies to the profile but has no valid answer
+ * yet, e.g. the injury follow-up right after picking an injury.
+ */
+export function firstUnanswered(
+  script: ChatScriptStep[],
+  profile: RunnerProfile,
+): QuestionStep | undefined {
+  return script
+    .filter(isQuestionStep)
+    .find(
+      (step) =>
+        isAsked(step, profile) && getAnswer(step, profile) === undefined,
+    );
+}
+
+/**
+ * One row per question that applies to the profile, in script order. Like
+ * `recapRows`, but a question without an answer shows `unansweredLabel`
+ * instead of being left out, so it can still be answered.
+ */
+export function profileRows(
+  script: ChatScriptStep[],
+  profile: RunnerProfile,
+  unansweredLabel: string,
+): RecapRow[] {
+  const rows: RecapRow[] = [];
+  for (const step of script) {
+    if (!isQuestionStep(step) || !isAsked(step, profile)) continue;
+    const answer = getAnswer(step, profile);
+    rows.push({
+      questionId: step.id,
+      label: step.recapLabel,
+      value: answer === undefined ? unansweredLabel : formatAnswer(step, answer),
+    });
+  }
+  return rows;
+}
+
+/**
  * Builds the conversation up to the first unanswered question (which ends
  * with a pending answer bubble) or the unconfirmed recap card.
  */

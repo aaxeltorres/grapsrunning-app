@@ -90,3 +90,20 @@ export function createEmptyProfile(): RunnerProfile {
 export function withDerivedFields(profile: RunnerProfile): RunnerProfile {
   return { ...profile, includeIntervals: profile.speedWork === 'yes' };
 }
+
+/** Answers the training plan is built from; the rest only describe the runner. */
+const PLAN_ANSWER_IDS = [
+  'goal',
+  'level',
+  'speedWork',
+  'availableDays',
+  'injuries',
+  'injuryStatus',
+] as const satisfies readonly QuestionId[];
+
+/** True when a change between two profiles makes the saved plan out of date. */
+export function planAnswersChanged(a: RunnerProfile, b: RunnerProfile) {
+  return PLAN_ANSWER_IDS.some(
+    (id) => JSON.stringify(a[id]) !== JSON.stringify(b[id]),
+  );
+}
