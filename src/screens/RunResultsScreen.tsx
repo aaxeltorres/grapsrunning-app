@@ -8,12 +8,13 @@ import MetricCard from '../components/MetricCard';
 import IconPlaceholder from '../components/IconPlaceholder';
 import Button from '../components/Button';
 import RunMap from '../components/RunMap';
+import GoalResultsSection from '../components/GoalResultsSection';
 import { formatPace } from '../utils/format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RunResults'>;
 
 export default function RunResultsScreen({ route, navigation }: Props) {
-  const { distanceKm, durationSeconds, route: routeCoordinates } = route.params;
+  const { distanceKm, durationSeconds, route: routeCoordinates, goal } = route.params;
   const paceLabel = formatPace(durationSeconds, distanceKm);
 
   const h = Math.floor(durationSeconds / 3600);
@@ -134,6 +135,16 @@ export default function RunResultsScreen({ route, navigation }: Props) {
           />
         </Animated.View>
 
+        {goal && (
+          <Animated.View style={[styles.goalsContainer, getAnimStyle(anim2)]}>
+            <GoalResultsSection
+              goal={goal}
+              distanceKm={distanceKm}
+              durationSeconds={durationSeconds}
+            />
+          </Animated.View>
+        )}
+
         <Animated.View style={[styles.mapContainer, getAnimStyle(anim3)]}>
           <RunMap coordinates={routeCoordinates} />
         </Animated.View>
@@ -174,6 +185,9 @@ const styles = StyleSheet.create({
   metricsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  goalsContainer: {
     marginBottom: spacing.md,
   },
   mapContainer: {

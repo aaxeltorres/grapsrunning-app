@@ -28,3 +28,4 @@ export { default as BasicRunView } from './BasicRunView';
 export { default as GoalRunView } from './GoalRunView';
 export { default as PlanRunView } from './PlanRunView';
 export { default as GoalPickerSheet } from './GoalPickerSheet';
+export { default as GoalResultsSection } from './GoalResultsSection';
