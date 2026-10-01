@@ -24,3 +24,6 @@ export { default as AnswerRow } from './AnswerRow';
 export { default as WorkoutTypeCarousel } from './WorkoutTypeCarousel';
 export { default as DurationBar } from './DurationBar';
 export { default as WorkoutEditorSheet } from './WorkoutEditorSheet';
+export { default as BasicRunView } from './BasicRunView';
+export { default as GoalRunView } from './GoalRunView';
+export { default as PlanRunView } from './PlanRunView';
