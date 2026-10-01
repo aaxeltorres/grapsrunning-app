@@ -17,7 +17,9 @@ import {
   duration,
   generatePlan,
   INTERVALS,
+  intervalMeters,
   paceRange,
+  planWeekIndex,
   round5,
   rulesFor,
   runWalkBoutSeconds,
@@ -76,8 +78,6 @@ export const EDITOR_KINDS: readonly EditorKind[] = [
 const sessionOf = (kind: EditorKind): SessionId | null =>
   isSessionId(kind) ? kind : null;
 
-/** Plans are built week by week: week 0 is the first (see `generatePlan`). */
-const LAST_WEEK = 3;
 /** Warm-up and cool-down of a continuous run: this share of the total... */
 const WARM_COOL_SHARE = 0.1;
 /** ...but never less than this many minutes. */
@@ -111,7 +111,10 @@ export type Draft = {
 
 export type EditorContext = {
   rules: Rules;
-  /** Week of the plan the workout is in (0-3). */
+  /**
+   * Week of the plan the workout is in (0 = the first). Weekly plans keep
+   * counting; the generator's rules repeat every four weeks.
+   */
   week: number;
 };
 
@@ -141,7 +144,7 @@ export function editorContext(
   const weeks = Math.floor((dayNumber(date) - dayNumber(plan.startDate)) / 7);
   return {
     rules: rulesFor(profile),
-    week: Math.min(LAST_WEEK, Math.max(0, weeks)),
+    week: Math.max(0, weeks),
   };
 }
 
@@ -204,7 +207,7 @@ type RepSpec = {
 function repSpec(kind: EditorKind, ctx: EditorContext): RepSpec {
   const { rules, week } = ctx;
   if (kind === 'intervals') {
-    const { meters } = INTERVALS[rules.focus];
+    const meters = intervalMeters(rules.focus, week);
     return {
       warmSeconds: INTERVALS_WARM_SECONDS,
       coolSeconds: INTERVALS_COOL_SECONDS,
@@ -305,8 +308,10 @@ function sessionDraftSegments(
   amount: number,
   ctx: EditorContext,
 ): WorkoutSegment[] {
+  // The week's variant, as the generator built it.
   return buildSession(workoutId, session, ctx.rules.easyPace, {
     totalSeconds: amount * 60,
+    variant: ctx.week,
   });
 }
 
@@ -449,7 +454,7 @@ export function segmentsFor(
   const layout = layoutFor(kind, amount, ctx);
 
   if (kind === 'intervals') {
-    const { meters } = INTERVALS[rules.focus];
+    const meters = intervalMeters(rules.focus, ctx.week);
     return [
       step('warmup', duration(layout.warmSeconds), warmPace),
       repeat(amount, [
@@ -564,6 +569,9 @@ export async function suggestedWorkout(
   profile: RunnerProfile,
   date: ISODate,
 ): Promise<Workout | undefined> {
-  const fresh = await generatePlan(profile, plan.startDate);
+  const week = planWeekIndex(plan.startDate, date);
+  const fresh = await generatePlan(profile, plan.startDate, {
+    weeks: Math.max(plan.weeks, week + 1),
+  });
   return fresh.workouts.find((workout) => workout.date === date);
 }

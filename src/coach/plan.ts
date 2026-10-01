@@ -26,6 +26,9 @@ export type WorkoutType =
   | 'speed'
   | 'rest';
 
+/** How far ahead a plan goes; mirrors the runner's `planLength` answer. */
+export type PlanLength = 'weekly' | 'monthly';
+
 /**
  * The specific session. Missing on workouts from before sessions existed,
  * and on easy runs, run/walks, long runs and classic intervals, which are
@@ -183,7 +186,13 @@ export type Plan = {
   createdAt: string;
   /** Monday of the first week. */
   startDate: ISODate;
+  /** Weeks generated so far, counted from `startDate`. */
   weeks: number;
+  /**
+   * 'weekly' plans get their next week added when it starts; missing means
+   * 'monthly' (four weeks at once), as every plan was before.
+   */
+  length?: PlanLength;
   /** Sorted by date, at most one per day. */
   workouts: Workout[];
 };

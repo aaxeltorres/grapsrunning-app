@@ -1,7 +1,8 @@
-import { addDays, startOfWeek, todayISO, type ISODate } from '../utils/dates';
+import { addDays, dayNumber, startOfWeek, todayISO, type ISODate } from '../utils/dates';
 import {
   isDemandingType,
   PLAN_SCHEMA_VERSION,
+  totalDistance,
   totalDuration,
   type Pace,
   type Plan,
@@ -16,6 +17,7 @@ import {
 import { buildSession, isAdvancedLevel, SESSION_SPECS } from './sessions';
 import {
   isBeginnerLevel,
+  planLengthOf,
   type DayId,
   type GoalId,
   type LevelId,
@@ -26,21 +28,54 @@ import {
  * Training plan generation. MOCK: a deterministic rule-based plan built
  * from the runner profile, with no network, so the Plan screen can be
  * built end to end before the AI coach exists.
+ *
+ * Weeks run in blocks of four: three build weeks and a lighter one. Each
+ * week's total volume follows `WEEK_CURVE`, whatever sessions it holds:
+ * the week is built at the load (`s`) that lands its total closest to the
+ * target while keeping build weeks within +10% of the week before and the
+ * fourth week 15-25% below the third (see `fitWeek`).
  */
 
-const PLAN_WEEKS = 4;
+/** Weeks of a monthly plan. */
+const MONTHLY_WEEKS = 4;
+const CYCLE_WEEKS = 4;
+// Weeks 1-3 build up; week 4 (index 3) is the lighter one.
+const DELOAD_WEEK = 3;
+/** A week's total volume relative to the block's first week. */
+const WEEK_CURVE = [1, 1.08, 1.16, 0.92];
+/** The long run's length relative to the block's first week. */
+const LONG_CURVE = [1, 1.08, 1.16, 0.9];
+/** Each new block starts this much above the first one... */
+const BLOCK_GROWTH = 0.05;
+/** ...for at most this many blocks (no adaptation until the AI coach). */
+const MAX_GROWTH_BLOCKS = 4;
+/** A build week grows at most this much over the week before. */
+const MAX_WEEK_GROWTH = 1.1;
+/** The lighter week, relative to the third one. */
+const DELOAD_RANGE = { min: 0.75, max: 0.85 };
+/** The load a week can be built at, searched in fixed steps. */
+const FIT_MIN = 0.6;
+const FIT_MAX = 1.6;
+const FIT_STEPS = 100;
+
 const DAY_ORDER: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DEFAULT_DAYS: DayId[] = ['tue', 'thu', 'sat'];
 // Keep at least one rest day, even when every day is available.
 const MAX_TRAINING_DAYS = 6;
-// Weeks 1-3 build up; week 4 is lighter to absorb the work.
-const WEEK_LOAD = [1, 1.1, 1.2, 0.85];
 const GENTLE_LOAD = 0.7;
-// Beginners (run/walk) get their first long run in week 3 (index 2)...
+const GENTLE_MINUTES = 30;
+// Beginners (run/walk) get their first long run in week 3 (index 2).
 const BEGINNER_FIRST_LONG_WEEK = 2;
-// ...and it grows about 10% a week from their regular run/walk session.
-const BEGINNER_LONG_GROWTH = 1.1;
+// A beginner's long run: bouts (with their walk) this much longer than the
+// week's regular run/walk, so it grows and shrinks with the week.
+const BEGINNER_LONG_BOUT_FACTOR = 1.25;
 const BEGINNER_RUN_WALK_REPS = 6;
+// Walk breaks are fixed, so the lighter week also drops a rep.
+const BEGINNER_DELOAD_REPS = 1;
+// Running bouts grow by this much each block, up to the cap.
+const BOUT_GROWTH_PER_BLOCK = 60;
+const MAX_BOUT_SECONDS = 600;
+const MIN_BOUT_SECONDS = 30;
 export const WALK_BREAK_SECONDS = 120;
 
 /** Easy pace (seconds per km) by level. */
@@ -97,6 +132,13 @@ export const INTERVALS: Record<GoalFocus, { meters: number; fasterBy: number }> 
   general: { meters: 400, fasterBy: 60 },
 };
 
+/** Every other week, classic intervals use reps this much longer... */
+const LONG_REP_FACTOR = 1.5;
+/** ...and this share of the reps. */
+const LONG_REP_SHARE = 2 / 3;
+/** Extra interval reps by week of the block: more while building, fewer in week 4. */
+const INTERVAL_REPS_BY_WEEK = [0, 1, 2, -1];
+
 export type Rules = {
   level: LevelId;
   focus: GoalFocus;
@@ -126,6 +168,20 @@ export function rulesFor(profile: RunnerProfile): Rules {
     advanced: !beginner && isAdvancedLevel(level),
     easyPace: EASY_PACE[level],
   };
+}
+
+/** Week of its block (0-3); week 3 is the lighter one. */
+const cycleWeek = (week: number) => week % CYCLE_WEEKS;
+const blockOf = (week: number) => Math.floor(week / CYCLE_WEEKS);
+const blockGrowth = (week: number) =>
+  1 + BLOCK_GROWTH * Math.min(blockOf(week), MAX_GROWTH_BLOCKS);
+
+/**
+ * A week's target volume relative to the plan's first week. Also the
+ * nominal load the workout editor builds a session of that week at.
+ */
+export function weekLoad(week: number) {
+  return WEEK_CURVE[cycleWeek(week)] * blockGrowth(week);
 }
 
 function trainingDays(profile: RunnerProfile): DayId[] {
@@ -191,14 +247,15 @@ function nextDay(day: DayId): DayId {
 }
 
 /**
- * The speed-work session of each week, by goal. Index 3 is the lighter
- * pick of the easier fourth week. `intervals` is the classic session
- * (e.g. 6 × 400 m).
+ * The speed-work session of each week of a block, by goal. The longest one
+ * sits in week 3, the biggest week; index 3 is the lighter pick of the
+ * easier fourth week. `intervals` is the classic
+ * session (e.g. 6 × 400 m).
  */
 const QUALITY_ROTATION: Record<GoalFocus, (SessionId | 'intervals')[]> = {
   '5k': ['intervals', 'hiit', 'sprints', 'strides'],
-  '10k': ['longIntervals', 'tempoRun', 'fartlek', 'mixedIntervals'],
-  distance: ['tempoRun', 'longIntervals', 'hiitMacro', 'fartlek'],
+  '10k': ['fartlek', 'tempoRun', 'longIntervals', 'mixedIntervals'],
+  distance: ['tempoRun', 'hiitMacro', 'longIntervals', 'fartlek'],
   general: ['fartlek', 'hiit', 'mixedIntervals', 'strides'],
 };
 
@@ -214,13 +271,10 @@ const NON_ADVANCED: Partial<Record<SessionId, SessionId>> = {
 /** Aerobic sessions alternate week by week. */
 const AEROBIC_ROTATION: SessionId[] = ['extensiveAerobic', 'progressive'];
 
-// Weeks 1-3 build up; week 4 (index 3) is the lighter one.
-const DELOAD_WEEK = 3;
-
 type Assignment = { type: WorkoutType; session?: SessionId };
 
 function qualitySession(rules: Rules, week: number): Assignment {
-  let pick = QUALITY_ROTATION[rules.focus][week % 4];
+  let pick = QUALITY_ROTATION[rules.focus][cycleWeek(week)];
   if (pick !== 'intervals' && SESSION_SPECS[pick].advanced && !rules.advanced) {
     pick = NON_ADVANCED[pick] ?? 'intervals';
   }
@@ -283,7 +337,7 @@ function weekTypes(
   if (
     rules.intervals &&
     (rules.focus === '10k' || rules.focus === 'distance') &&
-    week !== DELOAD_WEEK
+    cycleWeek(week) !== DELOAD_WEEK
   ) {
     const extra = days.find(
       (day) => isEasy(day) && !demanding(previousDay(day)) && !demanding(nextDay(day)),
@@ -312,24 +366,28 @@ const SESSION_LEVEL_SCALE: Record<LevelId, number> = {
 const REGENERATIVE_SHARE = 0.85;
 
 /**
- * A generated session: scaled by level and by the week's load. A
- * regenerative run follows the runner's own easy run instead, so it is
- * never longer than their other easy days.
+ * A generated session at load `s` (1 = the plan's first week; by default
+ * the week's nominal load). Rep blocks stay as the session defines them;
+ * the variant follows the week, so the same session differs from one week
+ * to the next. A regenerative run follows the runner's own easy run
+ * instead, so it is never longer than their other easy days.
  */
 export function sessionSegments(
   workoutId: string,
   session: SessionId,
   rules: Rules,
   week: number,
+  s: number = weekLoad(week),
 ): WorkoutSegment[] {
   if (session === 'regenerative') {
-    const easy = totalDuration({ segments: buildSegments(workoutId, 'easy', rules, week) });
+    const easy = totalDuration({ segments: buildSegments(workoutId, 'easy', rules, week, s) });
     return buildSession(workoutId, session, rules.easyPace, {
       totalSeconds: Math.max(minutes(SESSION_SPECS.regenerative.minMinutes), easy * REGENERATIVE_SHARE),
     });
   }
   return buildSession(workoutId, session, rules.easyPace, {
-    scale: SESSION_LEVEL_SCALE[rules.level] * WEEK_LOAD[week],
+    scale: SESSION_LEVEL_SCALE[rules.level] * s,
+    variant: week,
   });
 }
 
@@ -368,10 +426,25 @@ export const duration = (seconds: number): StepTarget => ({
   seconds,
 });
 
-/** Interval repetitions in a generated session (more for stronger runners). */
+/**
+ * Classic interval rep distance in a week: the goal's rep, and every
+ * other week a longer one (e.g. 400 m, then 600 m), so the session never
+ * repeats week after week.
+ */
+export function intervalMeters(focus: GoalFocus, week: number) {
+  const { meters } = INTERVALS[focus];
+  return week % 2 === 0 ? meters : meters * LONG_REP_FACTOR;
+}
+
+/**
+ * Interval repetitions in a generated session: more for stronger runners,
+ * more while the block builds, fewer in its lighter week, and fewer when
+ * the reps are the longer ones.
+ */
 export function defaultIntervalReps(level: LevelId, week: number) {
   const base = level === 'run_10k_plus' ? 7 : level === 'run_5k' ? 6 : 5;
-  return base + (week === 1 || week === 2 ? 1 : 0);
+  const reps = base + INTERVAL_REPS_BY_WEEK[cycleWeek(week)];
+  return week % 2 === 0 ? reps : Math.max(3, Math.round(reps * LONG_REP_SHARE));
 }
 
 /** Default run/walk repetitions in a generated session. */
@@ -379,45 +452,54 @@ export const DEFAULT_RUN_WALK_REPS = BEGINNER_RUN_WALK_REPS;
 
 /**
  * Length of one running bout in a run/walk session, in seconds. Bouts
- * grow week by week; a long run's bouts are about 10% longer than the
- * first long-run week's regular session, and grow about 10% a week.
+ * follow the week of the block (longer while building, shorter in week 4)
+ * and grow a minute each block. `s` is the week's fitted load. A long
+ * run's bouts (with their walk) are 25% longer than the week's regular
+ * ones, so it grows and shrinks with the week.
  */
 export function runWalkBoutSeconds(
   level: LevelId,
   week: number,
   type: WorkoutType,
+  s = 1,
 ): number {
   const runSecondsByWeek =
     level === 'not_running' ? [60, 90, 120, 90] : [120, 150, 180, 150];
-  if (type !== 'long') return runSecondsByWeek[week] ?? runSecondsByWeek[3];
-
-  const baseRun = runSecondsByWeek[BEGINNER_FIRST_LONG_WEEK];
-  const growth = BEGINNER_LONG_GROWTH ** (week - BEGINNER_FIRST_LONG_WEEK + 1);
-  const repSeconds = (baseRun + WALK_BREAK_SECONDS) * growth;
-  return round5(repSeconds - WALK_BREAK_SECONDS);
+  const bout = Math.min(
+    MAX_BOUT_SECONDS,
+    runSecondsByWeek[cycleWeek(week)] + BOUT_GROWTH_PER_BLOCK * blockOf(week),
+  );
+  const regular = Math.max(MIN_BOUT_SECONDS, round5(bout * s));
+  if (type !== 'long') return regular;
+  return round5((regular + WALK_BREAK_SECONDS) * BEGINNER_LONG_BOUT_FACTOR - WALK_BREAK_SECONDS);
 }
 
+/**
+ * A workout of a basic type (easy, long, run/walk, classic intervals) at
+ * load `s` (by default the week's nominal load). The long run follows its
+ * own curve; classic intervals keep their reps fixed.
+ */
 export function buildSegments(
   workoutId: string,
   type: WorkoutType,
   rules: Rules,
   week: number,
+  s: number = weekLoad(week),
 ): WorkoutSegment[] {
   const { step, repeat } = stepFactory(workoutId);
-  const load = WEEK_LOAD[week] * (rules.gentle ? GENTLE_LOAD : 1);
   const easy = paceRange(rules.easyPace, 10, 20);
   const warm = paceRange(rules.easyPace + 30, 10, 15);
 
   if (type === 'rest') return [];
 
   if (type === 'intervals') {
-    const { meters, fasterBy } = INTERVALS[rules.focus];
+    const { fasterBy } = INTERVALS[rules.focus];
     const fastPace = round5(rules.easyPace - fasterBy);
     const reps = defaultIntervalReps(rules.level, week);
     return [
       step('warmup', duration(minutes(10)), warm),
       repeat(reps, [
-        step('work', distance(meters / 1000), fastPace),
+        step('work', distance(intervalMeters(rules.focus, week) / 1000), fastPace),
         step('recovery', duration(90), null),
       ]),
       step('cooldown', duration(minutes(5)), warm),
@@ -426,8 +508,11 @@ export function buildSegments(
 
   if (rules.beginner) {
     // Run/walk: running bouts grow week by week.
-    const runSeconds = runWalkBoutSeconds(rules.level, week, type);
-    const reps = BEGINNER_RUN_WALK_REPS - (rules.gentle ? 2 : 0);
+    const runSeconds = runWalkBoutSeconds(rules.level, week, type, s);
+    const reps =
+      BEGINNER_RUN_WALK_REPS -
+      (rules.gentle ? 2 : 0) -
+      (cycleWeek(week) === DELOAD_WEEK ? BEGINNER_DELOAD_REPS : 0);
     return [
       step('warmup', duration(minutes(5)), null),
       repeat(reps, [
@@ -440,49 +525,161 @@ export function buildSegments(
 
   if (rules.gentle) {
     // Time-based, so there is no pressure to cover a distance.
-    return [step('steady', duration(minutes(30 * load)), easy)];
+    return [step('steady', duration(minutes(GENTLE_MINUTES * GENTLE_LOAD * s)), easy)];
   }
 
-  const factor = type === 'long' ? LONG_RUN_FACTOR[rules.focus] : 1;
-  const km = roundHalfKm(EASY_KM[rules.level] * factor * load);
-  const pace = type === 'long' ? paceRange(rules.easyPace, 0, 30) : easy;
-  return [step('steady', distance(km), pace)];
+  if (type === 'long') {
+    const longLoad = LONG_CURVE[cycleWeek(week)] * blockGrowth(week);
+    const km = roundHalfKm(EASY_KM[rules.level] * LONG_RUN_FACTOR[rules.focus] * longLoad);
+    return [step('steady', distance(km), paceRange(rules.easyPace, 0, 30))];
+  }
+
+  return [step('steady', distance(roundHalfKm(EASY_KM[rules.level] * s)), easy)];
+}
+
+type GeneratorContext = {
+  rules: Rules;
+  days: DayId[];
+  /** Monday of the plan's first week. */
+  startDate: ISODate;
+};
+
+/** One week's workouts (rest days included) and its totals. */
+type BuiltWeek = { workouts: Workout[]; seconds: number; meters: number };
+
+function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek {
+  const { rules, days, startDate } = ctx;
+  const types = weekTypes(days, rules, week);
+  const workouts = DAY_ORDER.map((day, dayIndex): Workout => {
+    const date = addDays(startDate, week * 7 + dayIndex);
+    const { type, session }: Assignment = types.get(day) ?? { type: 'rest' };
+    const id = `w-${date}`;
+    return {
+      id,
+      date,
+      type,
+      ...(session ? { session } : {}),
+      status: 'planned',
+      segments: session
+        ? sessionSegments(id, session, rules, week, s)
+        : buildSegments(id, type, rules, week, s),
+    };
+  });
+  return {
+    workouts,
+    seconds: workouts.reduce((sum, w) => sum + totalDuration(w), 0),
+    meters: workouts.reduce((sum, w) => sum + totalDistance(w), 0),
+  };
+}
+
+/** Allowed totals relative to the week before, by week of the block. */
+function weekBounds(week: number) {
+  const cycle = cycleWeek(week);
+  if (cycle === 0) return null;
+  if (cycle === DELOAD_WEEK) return DELOAD_RANGE;
+  return { min: 1, max: MAX_WEEK_GROWTH };
+}
+
+/** How far a week falls outside its bounds, on time and distance (0 = inside). */
+function boundsMiss(built: BuiltWeek, previous: BuiltWeek | undefined, week: number) {
+  const bounds = weekBounds(week);
+  if (!bounds || !previous) return 0;
+  let miss = 0;
+  for (const [value, before] of [
+    [built.seconds, previous.seconds],
+    [built.meters, previous.meters],
+  ]) {
+    if (before <= 0) continue;
+    const ratio = value / before;
+    miss += Math.max(0, bounds.min - ratio) + Math.max(0, ratio - bounds.max);
+  }
+  return miss;
 }
 
 /**
+ * Builds a week at the load whose total time is closest to its target
+ * (the first week's volume × `weekLoad`), among the loads that keep it
+ * within its bounds; when none does, the one that misses them least. Ties
+ * go to the load closest to 1. Deterministic: a fixed grid of loads.
+ */
+function fitWeek(
+  ctx: GeneratorContext,
+  week: number,
+  first: BuiltWeek,
+  previous: BuiltWeek | undefined,
+): BuiltWeek {
+  const target = first.seconds * weekLoad(week);
+  let best: BuiltWeek | undefined;
+  let bestScore = Infinity;
+  for (let i = 0; i <= FIT_STEPS; i += 1) {
+    const s = FIT_MIN + ((FIT_MAX - FIT_MIN) * i) / FIT_STEPS;
+    const built = buildWeekAt(ctx, week, s);
+    const score =
+      boundsMiss(built, previous, week) * 1e9 +
+      Math.abs(built.seconds - target) +
+      Math.abs(s - 1) * 1e-3;
+    if (score < bestScore) {
+      best = built;
+      bestScore = score;
+    }
+  }
+  return best!;
+}
+
+/**
+ * The given weeks, fitted. A week's bounds depend on the week before in
+ * its block, so each block is built from its first week: any week comes
+ * out the same whether it is built alone (a weekly plan's next week) or
+ * with the whole plan.
+ */
+function fittedWeeks(ctx: GeneratorContext, weeks: number[]): Map<number, BuiltWeek> {
+  // The plan's first week at its natural load sets the volume.
+  const first = buildWeekAt(ctx, 0, 1);
+  const cache = new Map<number, BuiltWeek>();
+  const fitted = (week: number): BuiltWeek => {
+    const cached = cache.get(week);
+    if (cached) return cached;
+    const previous = cycleWeek(week) === 0 ? undefined : fitted(week - 1);
+    const built = fitWeek(ctx, week, first, previous);
+    cache.set(week, built);
+    return built;
+  };
+  return new Map(weeks.map((week) => [week, fitted(week)]));
+}
+
+function contextFor(profile: RunnerProfile, startDate: ISODate): GeneratorContext {
+  return { rules: rulesFor(profile), days: trainingDays(profile), startDate };
+}
+
+/** Workouts of the given weeks (counted from `startDate`), from `from` on. */
+function weekWorkouts(
+  profile: RunnerProfile,
+  startDate: ISODate,
+  weeks: number[],
+  from: ISODate,
+): Workout[] {
+  const built = fittedWeeks(contextFor(profile, startDate), weeks);
+  return weeks
+    .flatMap((week) => built.get(week)?.workouts ?? [])
+    .filter((workout) => workout.date >= from);
+}
+
+const range = (count: number) => Array.from({ length: count }, (_, i) => i);
+
+/**
  * Deterministic mock plan: the same profile and date always give the
- * same plan. Four weeks from the Monday of `today`'s week; days before
+ * same plan. From the Monday of `today`'s week: four weeks for a monthly
+ * plan, one for a weekly plan (or `weeks`, when given). Days before
  * `today` are left out, and days without training are rest days.
  */
 export function buildMockPlan(
   profile: RunnerProfile,
   today: ISODate = todayISO(),
+  options: { weeks?: number } = {},
 ): Plan {
-  const rules = rulesFor(profile);
-  const days = trainingDays(profile);
+  const length = planLengthOf(profile);
   const startDate = startOfWeek(today);
-  const workouts: Workout[] = [];
-
-  for (let week = 0; week < PLAN_WEEKS; week += 1) {
-    const types = weekTypes(days, rules, week);
-    DAY_ORDER.forEach((day, dayIndex) => {
-      const date = addDays(startDate, week * 7 + dayIndex);
-      if (date < today) return;
-
-      const { type, session }: Assignment = types.get(day) ?? { type: 'rest' };
-      const id = `w-${date}`;
-      workouts.push({
-        id,
-        date,
-        type,
-        ...(session ? { session } : {}),
-        status: 'planned',
-        segments: session
-          ? sessionSegments(id, session, rules, week)
-          : buildSegments(id, type, rules, week),
-      });
-    });
-  }
+  const weeks = options.weeks ?? (length === 'weekly' ? 1 : MONTHLY_WEEKS);
 
   return {
     id: `plan-${startDate}`,
@@ -490,8 +687,9 @@ export function buildMockPlan(
     source: 'mock',
     createdAt: new Date().toISOString(),
     startDate,
-    weeks: PLAN_WEEKS,
-    workouts,
+    weeks,
+    length,
+    workouts: weekWorkouts(profile, startDate, range(weeks), today),
   };
 }
 
@@ -506,13 +704,68 @@ export function buildMockPlan(
  * tempo) on consecutive days, no interval or speed sessions unless
  * `includeIntervals` (and never for beginners), the advanced sessions
  * only from the 5K level up, and beginners' first long run in week 3.
+ * Weekly volume builds for three weeks (at most +10% a week) and drops
+ * 15-25% in the fourth; a session never repeats with the same structure
+ * on the same weekday in consecutive weeks. A weekly plan (`planLength`)
+ * gets one week now and the next ones through `extendPlan`.
  * Sessions come back with `session` set, built as in `sessions.ts`.
  */
 export async function generatePlan(
   profile: RunnerProfile,
   today: ISODate = todayISO(),
+  options: { weeks?: number } = {},
 ): Promise<Plan> {
-  return buildMockPlan(profile, today);
+  return buildMockPlan(profile, today, options);
+}
+
+/**
+ * The workouts of week `week` of a plan starting on `startDate`, from
+ * `from` on. The week continues the plan's block pattern (three build
+ * weeks, one lighter) by its index.
+ *
+ * TODO(ai-coach): the AI coach builds the next week here, and may adapt
+ * it to the weeks already run.
+ */
+export async function generateWeek(
+  profile: RunnerProfile,
+  startDate: ISODate,
+  week: number,
+  from: ISODate,
+): Promise<Workout[]> {
+  return weekWorkouts(profile, startDate, [week], from);
+}
+
+/** Index of `date`'s week in a plan starting on `startDate` (0 = first). */
+export function planWeekIndex(startDate: ISODate, date: ISODate) {
+  return Math.floor((dayNumber(date) - dayNumber(startDate)) / 7);
+}
+
+/**
+ * A weekly plan gets the week it is in once that week starts: when
+ * `today` falls past the generated weeks, the current week is generated
+ * by its calendar index (so build, build, build, lighter carries on) and
+ * appended from `today` on. Weeks the app was not opened in are not filled
+ * in: they are over. Existing workouts are never touched. Returns the same
+ * plan when there is nothing to add, including for monthly plans.
+ */
+export async function extendPlan(
+  plan: Plan,
+  profile: RunnerProfile,
+  today: ISODate = todayISO(),
+): Promise<Plan> {
+  if (plan.length !== 'weekly') return plan;
+  const week = planWeekIndex(plan.startDate, today);
+  if (week < plan.weeks) return plan;
+
+  const taken = new Set(plan.workouts.map((w) => w.date));
+  const added = (await generateWeek(profile, plan.startDate, week, today)).filter(
+    (w) => !taken.has(w.date),
+  );
+  return {
+    ...plan,
+    weeks: week + 1,
+    workouts: [...plan.workouts, ...added].sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }
 
 /**
@@ -539,8 +792,8 @@ function isReplaceable(workout: Workout, today: ISODate) {
  * happened. Every planned workout from `today` on is replaced, including
  * edited ones; completed, partial and skipped workouts keep their results,
  * and a new workout never lands on a date a kept workout already uses. The
- * new plan starts this week (its progression restarts at week 1). With no
- * stored plan it is simply the generated one.
+ * new plan starts this week (its progression restarts at week 1) with the
+ * runner's plan length. With no stored plan it is simply the generated one.
  */
 export async function createNewPlan(
   plan: Plan | null,
@@ -566,16 +819,20 @@ export async function createNewPlan(
  * Rebuilds the plan after the runner's answers changed. Only the workouts
  * that are still ahead, planned and not edited are replaced: past days,
  * completed, skipped and edited workouts stay exactly as they are. The
- * plan keeps its id, start date and length, and the new workouts follow
- * the same week-by-week progression as the original.
+ * plan keeps its id, start date and weeks (a monthly plan has at least
+ * four) and takes the runner's plan length; the new workouts follow the
+ * same week-by-week progression as the original.
  */
 export async function regeneratePlan(
   plan: Plan,
   profile: RunnerProfile,
   today: ISODate = todayISO(),
 ): Promise<Plan> {
+  const length = planLengthOf(profile);
+  const weeks =
+    length === 'monthly' ? Math.max(plan.weeks, MONTHLY_WEEKS) : plan.weeks;
   // Generated from the plan's own start, so week 1 stays week 1.
-  const fresh = await generatePlan(profile, plan.startDate);
+  const fresh = await generatePlan(profile, plan.startDate, { weeks });
   const kept = plan.workouts.filter((w) => !isRegeneratable(w, today));
   const taken = new Set(kept.map((w) => w.date));
   const added = fresh.workouts.filter(
@@ -584,6 +841,8 @@ export async function regeneratePlan(
 
   return {
     ...plan,
+    weeks,
+    length,
     workouts: [...kept, ...added].sort((a, b) => a.date.localeCompare(b.date)),
   };
 }

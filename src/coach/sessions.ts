@@ -99,80 +99,199 @@ const flex = (kind: StepKind, zone: Zone, minutes: number): Flex => ({
   seconds: min(minutes),
 });
 
-/**
- * Each session as the coach wrote it. Speed and interval sessions that
- * start cold get a 10' Z1 warm-up; the rest is the reference session.
- */
-const TEMPLATES: Record<SessionId, (m: Make) => Part[]> = {
-  // 40' Z2
-  regenerative: () => [flex('steady', 2, 40)],
-  // 45' to 60' continuous Z3
-  extensiveAerobic: () => [flex('steady', 3, 45)],
-  // 20' Z2 + 15' Z3 + 10' Z4 + 5' Z1
-  progressive: () => [
-    flex('steady', 2, 20),
-    flex('steady', 3, 15),
-    flex('steady', 4, 10),
-    flex('cooldown', 1, 5),
-  ],
-  // 5' Z1 + 15' Z3 + 15' Z4 + 5' Z1: consecutive zones, no rests
-  tempoRun: () => [
-    flex('warmup', 1, 5),
-    flex('steady', 3, 15),
-    flex('steady', 4, 15),
-    flex('cooldown', 1, 5),
-  ],
-  // 15' Z2 + 8 × 15'' Z4 with full (manual) rests
-  strides: ({ step, repeat }) => [
-    flex('warmup', 2, 15),
-    repeat(8, [
-      step('work', seconds(15), 4),
+type Template = (m: Make) => Part[];
+
+const sprintSets = (reps: number, meters: number, sets: number): Template => ({ step, repeat }) => [
+  flex('warmup', 1, 10),
+  repeat(
+    reps,
+    [
+      step('work', manual(SPRINT_ESTIMATE_S, meters), 5),
       step('recovery', manual(FULL_REST_ESTIMATE_S), undefined),
-    ]),
+    ],
+    { sets, macroRest: step('macroRest', manual(FULL_SET_REST_ESTIMATE_S), undefined) },
+  ),
+  flex('cooldown', 1, 15),
+];
+
+/**
+ * Each session as the coach wrote it, in variants. The first variant is
+ * the reference session; the others change reps, rep length or the zone
+ * split, so the plan never repeats a session exactly week after week
+ * (the generator picks the variant from the week, see `buildSession`).
+ * Speed and interval sessions that start cold get a 10' Z1 warm-up.
+ */
+const TEMPLATES: Record<SessionId, Template[]> = {
+  regenerative: [
+    // 40' Z2
+    () => [flex('steady', 2, 40)],
   ],
-  // 5' Z2 + 8 × (1'30'' Z4 + 2'30'' Z2)
-  fartlek: ({ step, repeat }) => [
-    flex('warmup', 2, 5),
-    repeat(8, [step('work', seconds(90), 4), step('recovery', seconds(150), 2)]),
+  extensiveAerobic: [
+    // 45' to 60' continuous Z3
+    () => [flex('steady', 3, 45)],
+    // 10' Z2 + 35' Z3
+    () => [flex('steady', 2, 10), flex('steady', 3, 35)],
   ],
-  // 10 × 3' Z4 with 2' active rests in Z1
-  longIntervals: ({ step, repeat }) => [
-    flex('warmup', 1, 10),
-    repeat(10, [step('work', seconds(180), 4), step('recovery', seconds(120), 1)]),
-    flex('cooldown', 1, 5),
+  progressive: [
+    // 20' Z2 + 15' Z3 + 10' Z4 + 5' Z1
+    () => [
+      flex('steady', 2, 20),
+      flex('steady', 3, 15),
+      flex('steady', 4, 10),
+      flex('cooldown', 1, 5),
+    ],
+    // 15' Z2 + 20' Z3 + 10' Z4 + 5' Z1
+    () => [
+      flex('steady', 2, 15),
+      flex('steady', 3, 20),
+      flex('steady', 4, 10),
+      flex('cooldown', 1, 5),
+    ],
   ],
-  // 5 × 2' Z4 with 2' Z2 rests, finish 5' Z1
-  mixedIntervals: ({ step, repeat }) => [
-    flex('warmup', 1, 10),
-    repeat(5, [step('work', seconds(120), 4), step('recovery', seconds(120), 2)]),
-    flex('cooldown', 1, 5),
+  tempoRun: [
+    // 5' Z1 + 15' Z3 + 15' Z4 + 5' Z1: consecutive zones, no rests
+    () => [
+      flex('warmup', 1, 5),
+      flex('steady', 3, 15),
+      flex('steady', 4, 15),
+      flex('cooldown', 1, 5),
+    ],
+    // 5' Z1 + 10' Z3 + 20' Z4 + 5' Z1
+    () => [
+      flex('warmup', 1, 5),
+      flex('steady', 3, 10),
+      flex('steady', 4, 20),
+      flex('cooldown', 1, 5),
+    ],
   ],
-  // 10 × 10'' Z5, then 6 × 15'' Z4, all with 1' Z2 rests
-  hiit: ({ step, repeat }) => [
-    flex('warmup', 1, 10),
-    repeat(10, [step('work', seconds(10), 5), step('recovery', seconds(60), 2)]),
-    repeat(6, [step('work', seconds(15), 4), step('recovery', seconds(60), 2)]),
-  ],
-  // 2 sets of 8 × 20'' Z5, 1' Z1 micro rest, 3' macro rest
-  hiitMacro: ({ step, repeat }) => [
-    flex('warmup', 1, 10),
-    repeat(8, [step('work', seconds(20), 5), step('recovery', seconds(60), 1)], {
-      sets: 2,
-      macroRest: step('macroRest', seconds(180), 1),
-    }),
-  ],
-  // 3 blocks of 5 × 20 m sprints in Z5, full (manual) rests, then 15' Z1
-  sprints: ({ step, repeat }) => [
-    flex('warmup', 1, 10),
-    repeat(
-      5,
-      [
-        step('work', manual(SPRINT_ESTIMATE_S, 20), 5),
+  strides: [
+    // 15' Z2 + 8 × 15'' Z4 with full (manual) rests
+    ({ step, repeat }) => [
+      flex('warmup', 2, 15),
+      repeat(8, [
+        step('work', seconds(15), 4),
         step('recovery', manual(FULL_REST_ESTIMATE_S), undefined),
-      ],
-      { sets: 3, macroRest: step('macroRest', manual(FULL_SET_REST_ESTIMATE_S), undefined) },
-    ),
-    flex('cooldown', 1, 15),
+      ]),
+    ],
+    // 15' Z2 + 6 × 20'' Z4 with full (manual) rests
+    ({ step, repeat }) => [
+      flex('warmup', 2, 15),
+      repeat(6, [
+        step('work', seconds(20), 4),
+        step('recovery', manual(FULL_REST_ESTIMATE_S), undefined),
+      ]),
+    ],
+  ],
+  fartlek: [
+    // 5' Z2 + 8 × (1'30'' Z4 + 2'30'' Z2)
+    ({ step, repeat }) => [
+      flex('warmup', 2, 5),
+      repeat(8, [step('work', seconds(90), 4), step('recovery', seconds(150), 2)]),
+    ],
+    // 5' Z2 + 6 × (2' Z4 + 2' Z2)
+    ({ step, repeat }) => [
+      flex('warmup', 2, 5),
+      repeat(6, [step('work', seconds(120), 4), step('recovery', seconds(120), 2)]),
+    ],
+    // 5' Z2 + 10 × (1' Z4 + 2' Z2)
+    ({ step, repeat }) => [
+      flex('warmup', 2, 5),
+      repeat(10, [step('work', seconds(60), 4), step('recovery', seconds(120), 2)]),
+    ],
+  ],
+  longIntervals: [
+    // 10 × 3' Z4 with 2' active rests in Z1
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(10, [step('work', seconds(180), 4), step('recovery', seconds(120), 1)]),
+      flex('cooldown', 1, 5),
+    ],
+    // 6 × 4' Z4 with 2' active rests in Z1
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(6, [step('work', seconds(240), 4), step('recovery', seconds(120), 1)]),
+      flex('cooldown', 1, 5),
+    ],
+    // 5 × 5' Z4 with 2'30'' active rests in Z1
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(5, [step('work', seconds(300), 4), step('recovery', seconds(150), 1)]),
+      flex('cooldown', 1, 5),
+    ],
+  ],
+  mixedIntervals: [
+    // 5 × 2' Z4 with 2' Z2 rests, finish 5' Z1
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(5, [step('work', seconds(120), 4), step('recovery', seconds(120), 2)]),
+      flex('cooldown', 1, 5),
+    ],
+    // 4 × 3' Z4 with 2' Z2 rests
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(4, [step('work', seconds(180), 4), step('recovery', seconds(120), 2)]),
+      flex('cooldown', 1, 5),
+    ],
+    // 6 × 1'30'' Z4 with 1'30'' Z2 rests
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(6, [step('work', seconds(90), 4), step('recovery', seconds(90), 2)]),
+      flex('cooldown', 1, 5),
+    ],
+  ],
+  hiit: [
+    // 10 × 10'' Z5, then 6 × 15'' Z4, all with 1' Z2 rests
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(10, [step('work', seconds(10), 5), step('recovery', seconds(60), 2)]),
+      repeat(6, [step('work', seconds(15), 4), step('recovery', seconds(60), 2)]),
+    ],
+    // 12 × 10'' Z5, then 4 × 20'' Z4, all with 1' Z2 rests
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(12, [step('work', seconds(10), 5), step('recovery', seconds(60), 2)]),
+      repeat(4, [step('work', seconds(20), 4), step('recovery', seconds(60), 2)]),
+    ],
+    // 8 × 15'' Z5, then 4 × 20'' Z4, all with 1' Z2 rests
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(8, [step('work', seconds(15), 5), step('recovery', seconds(60), 2)]),
+      repeat(4, [step('work', seconds(20), 4), step('recovery', seconds(60), 2)]),
+    ],
+  ],
+  hiitMacro: [
+    // 2 sets of 8 × 20'' Z5, 1' Z1 micro rest, 3' macro rest
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(8, [step('work', seconds(20), 5), step('recovery', seconds(60), 1)], {
+        sets: 2,
+        macroRest: step('macroRest', seconds(180), 1),
+      }),
+    ],
+    // 3 sets of 6 × 20'' Z5, 1' Z1 micro rest, 3' macro rest
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(6, [step('work', seconds(20), 5), step('recovery', seconds(60), 1)], {
+        sets: 3,
+        macroRest: step('macroRest', seconds(180), 1),
+      }),
+    ],
+    // 2 sets of 10 × 15'' Z5, 45'' Z1 micro rest, 3' macro rest
+    ({ step, repeat }) => [
+      flex('warmup', 1, 10),
+      repeat(10, [step('work', seconds(15), 5), step('recovery', seconds(45), 1)], {
+        sets: 2,
+        macroRest: step('macroRest', seconds(180), 1),
+      }),
+    ],
+  ],
+  sprints: [
+    // 3 blocks of 5 × 20 m sprints in Z5, full (manual) rests, then 15' Z1
+    sprintSets(5, 20, 3),
+    // 4 blocks of 4 × 30 m
+    sprintSets(4, 30, 4),
+    // 2 blocks of 6 × 20 m
+    sprintSets(6, 20, 2),
   ],
 };
 
@@ -210,16 +329,19 @@ const roundFlex = (s: number) => Math.max(FLEX_MIN_S, Math.round(s / FLEX_ROUND_
 /**
  * Builds a session. `scale` stretches its continuous parts (1 = the
  * reference session); `totalSeconds`, when given, wins and sets the scale
- * so the whole session lasts about that long.
+ * so the whole session lasts about that long. `variant` picks one of the
+ * session's variants, wrapping around (any whole number works, e.g. the
+ * plan week).
  */
 export function buildSession(
   workoutId: string,
   session: SessionId,
   easyPace: number,
-  options: { scale?: number; totalSeconds?: number } = {},
+  options: { scale?: number; totalSeconds?: number; variant?: number } = {},
 ): WorkoutSegment[] {
   const make = maker(workoutId, easyPace);
-  const parts = TEMPLATES[session](make);
+  const variants = TEMPLATES[session];
+  const parts = variants[Math.max(0, options.variant ?? 0) % variants.length](make);
   const fixed = totalDuration({ segments: parts.filter((p): p is WorkoutSegment => !isFlex(p)) });
   const flexBase = parts.reduce((sum, p) => sum + (isFlex(p) ? p.seconds : 0), 0);
 

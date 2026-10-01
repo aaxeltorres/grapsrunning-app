@@ -52,6 +52,12 @@ export type InjuryId =
 
 export type InjuryStatusId = 'recovered' | 'sometimes_bothers' | 'hurts_now';
 
+/**
+ * How far ahead the plan goes: one week at a time (the next week is added
+ * when it starts) or four weeks at once.
+ */
+export type PlanLengthId = 'weekly' | 'monthly';
+
 /** Every answer the onboarding collects, keyed by question id. */
 export type RunnerAnswers = {
   goal: GoalId;
@@ -59,6 +65,8 @@ export type RunnerAnswers = {
   /** Only asked past the beginner levels. Drives `includeIntervals`. */
   speedWork: SpeedWorkId;
   availableDays: DayId[];
+  /** Missing on profiles saved before the question: read it with `planLengthOf`. */
+  planLength: PlanLengthId;
   age: number;
   heightCm: number;
   weightKg: number;
@@ -108,9 +116,20 @@ const PLAN_ANSWER_IDS = [
   'level',
   'speedWork',
   'availableDays',
+  'planLength',
   'injuries',
   'injuryStatus',
 ] as const satisfies readonly QuestionId[];
+
+/** The plan length; missing (profiles from before the question) means monthly. */
+export function planLengthOf(profile: RunnerProfile): PlanLengthId {
+  return profile.planLength ?? 'monthly';
+}
+
+/** True when the change between two profiles switched the plan length. */
+export function planLengthChanged(a: RunnerProfile, b: RunnerProfile) {
+  return planLengthOf(a) !== planLengthOf(b);
+}
 
 /** True when a change between two profiles makes the saved plan out of date. */
 export function planAnswersChanged(a: RunnerProfile, b: RunnerProfile) {
