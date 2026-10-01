@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { colors, spacing, typography } from '../theme';
 import IconPlaceholder from './IconPlaceholder';
 
@@ -9,19 +9,44 @@ type Props = {
   showLogo?: boolean;
   /** Long-press on the title, e.g. for dev-only shortcuts. */
   onTitleLongPress?: () => void;
-  /** Replaces the profile placeholder on the right. */
+  /** Replaces the profile placeholder on the right; `null` leaves it empty. */
   right?: React.ReactNode;
+  /** Shows a back button before the title. */
+  onBack?: () => void;
 };
+
+const BACK_BUTTON_SIZE = 34;
 
 export default function TopBar({
   title,
   showLogo = false,
   onTitleLongPress,
   right,
+  onBack,
 }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.left}>
+        {onBack && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={8}
+            onPress={onBack}
+            style={({ pressed }) => [
+              styles.backButton,
+              pressed && styles.backPressed,
+            ]}
+          >
+            <Text
+              importantForAccessibility="no"
+              maxFontSizeMultiplier={1.2}
+              style={[typography.title2, styles.backIcon]}
+            >
+              ‹
+            </Text>
+          </Pressable>
+        )}
         {showLogo && (
           <IconPlaceholder
             size={28}
@@ -43,12 +68,14 @@ export default function TopBar({
           </Text>
         )}
       </View>
-      {right ?? (
+      {right === undefined ? (
         <IconPlaceholder
           size={30}
           backgroundColor={colors.surfaceGray}
           style={styles.profileIcon}
         />
+      ) : (
+        right
       )}
     </View>
   );
@@ -74,4 +101,20 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   profileIcon: {},
+  backButton: {
+    width: BACK_BUTTON_SIZE,
+    height: BACK_BUTTON_SIZE,
+    borderRadius: BACK_BUTTON_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceGray,
+  },
+  backPressed: {
+    opacity: 0.6,
+  },
+  backIcon: {
+    color: colors.textPrimary,
+    // The glyph sits low in its line box.
+    marginTop: -2,
+  },
 });
