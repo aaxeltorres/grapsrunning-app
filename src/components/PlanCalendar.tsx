@@ -23,10 +23,15 @@ const NAV_BUTTON_SIZE = 36;
 // Seven columns must fit on an iPhone SE, even with large text.
 const DAY_MAX_FONT_SCALE = 1.4;
 
+// One entry per category; the calendar shows only the category color, the
+// session name (Fartlek, HIIT...) is on the workout card.
 const LEGEND = [
   { type: 'easy', label: 'Easy' },
-  { type: 'intervals', label: 'Intervals' },
+  { type: 'aerobic', label: 'Aerobic' },
+  { type: 'tempo', label: 'Tempo' },
   { type: 'long', label: 'Long' },
+  { type: 'intervals', label: 'Intervals' },
+  { type: 'speed', label: 'Speed' },
 ] as const;
 
 type WorkoutLookup = (date: ISODate) => Workout | undefined;

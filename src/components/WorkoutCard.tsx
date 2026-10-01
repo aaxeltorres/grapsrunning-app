@@ -2,9 +2,12 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   displayName,
+  hasZones,
   isFinished,
   keyPace,
   segmentBarParts,
+  structureLine,
+  topZone,
   totalDistance,
   totalDuration,
   typeLabel,
@@ -79,6 +82,8 @@ type Props = {
   onEdit?: () => void;
   /** A finished workout's option to go for a free run instead. */
   onRunAgain?: () => void;
+  /** Opens the zone guide; shown on workouts described in zones. */
+  onZoneGuide?: () => void;
 };
 
 /**
@@ -92,6 +97,7 @@ export default function WorkoutCard({
   onStart,
   onEdit,
   onRunAgain,
+  onZoneGuide,
 }: Props) {
   const heading = dayHeading(date, today, workout);
 
@@ -114,6 +120,10 @@ export default function WorkoutCard({
   }
 
   const pace = keyPace(workout);
+  // Sessions are described in zones: their hardest zone says more than a
+  // pace (their shortest efforts have none).
+  const zone = workout.session ? topZone(workout) : null;
+  const structure = structureLine(workout);
   const isDone = isFinished(workout);
   const isPartial = workout.status === 'partial';
   const isSkipped = workout.status === 'skipped';
@@ -145,6 +155,20 @@ export default function WorkoutCard({
       <Text style={[typography.largeTitle, styles.title]}>
         {displayName(workout)}
       </Text>
+      {structure && (
+        <Text style={[typography.subheadline, styles.structure]}>{structure}</Text>
+      )}
+      {onZoneGuide && hasZones(workout) && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Explains the training zones and your pace for each"
+          hitSlop={8}
+          onPress={onZoneGuide}
+          style={({ pressed }) => [styles.zoneLink, pressed && styles.pressed]}
+        >
+          <Text style={[typography.subheadline, styles.runAgain]}>Zones ›</Text>
+        </Pressable>
+      )}
 
       <View style={styles.metrics}>
         <Metric
@@ -162,6 +186,8 @@ export default function WorkoutCard({
             value={formatPaceSeconds(actual.avgPaceSecPerKm)}
             label="avg pace /km"
           />
+        ) : zone !== null ? (
+          <Metric value={`Z${zone}`} label="top zone" />
         ) : (
           pace !== null && (
             <Metric
@@ -449,6 +475,12 @@ const styles = StyleSheet.create({
   },
   plannedLine: {
     color: colors.textSecondary,
+  },
+  structure: {
+    color: colors.textSecondary,
+  },
+  zoneLink: {
+    alignSelf: 'flex-start',
   },
   doneRow: {
     flexDirection: 'row',

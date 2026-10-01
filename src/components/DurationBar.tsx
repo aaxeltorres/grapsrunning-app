@@ -64,6 +64,8 @@ function minutesLabel(seconds: number) {
 }
 
 function segmentLabel(name: string, seconds: number, px: number) {
+  // Some sessions have no warm-up or cool-down: no "0′" label.
+  if (seconds <= 0) return '';
   if (px >= NAMED_LABEL_PX) return `${name}\n${minutesLabel(seconds)}`;
   if (px >= MINUTES_LABEL_PX) return minutesLabel(seconds);
   return `${Math.round(seconds / 60)}′`;

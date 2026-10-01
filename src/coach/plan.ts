@@ -427,6 +427,16 @@ export function structureLine(workout: Pick<Workout, 'segments' | 'session'>) {
     .join(' + ');
 }
 
+/** The hardest zone among the efforts (rests left out). */
+export function topZone(workout: Pick<Workout, 'segments'>): Zone | null {
+  let top: Zone | null = null;
+  for (const step of flattenSteps(workout.segments)) {
+    if (step.zone === undefined || isRest(step)) continue;
+    if (top === null || step.zone > top) top = step.zone;
+  }
+  return top;
+}
+
 /** Whether any step of the workout is described in zones. */
 export function hasZones(workout: Pick<Workout, 'segments'>) {
   return flattenSteps(workout.segments).some((step) => step.zone !== undefined);

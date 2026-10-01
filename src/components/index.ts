@@ -35,3 +35,4 @@ export { default as RunRouteCard } from './RunRouteCard';
 export { default as RunSplits } from './RunSplits';
 export { default as AlertBlock } from './AlertBlock';
 export { default as WorkoutProgressBar } from './WorkoutProgressBar';
+export { default as ZoneGuideSheet } from './ZoneGuideSheet';

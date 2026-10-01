@@ -21,6 +21,7 @@ import {
   planDayMessage,
   type PlanDayMessageKey,
 } from '../coach/planOnboardingScript';
+import { rulesFor } from '../coach/generatePlan';
 import type { RunnerProfile } from '../coach/runnerProfile';
 import { suggestedWorkout } from '../coach/workoutEditor';
 import { useEntranceAnimation } from '../hooks/useEntranceAnimation';
@@ -37,6 +38,7 @@ import MikeAvatar from './MikeAvatar';
 import { PlanMonthCalendar, PlanWeekStrip } from './PlanCalendar';
 import SegmentedControl from './SegmentedControl';
 import WorkoutEditorSheet from './WorkoutEditorSheet';
+import ZoneGuideSheet from './ZoneGuideSheet';
 import WorkoutCard, {
   formatKm,
   formatMinutes,
@@ -119,6 +121,9 @@ export default function PlanOverview({
     selectedWorkout !== undefined &&
     selectedWorkout.type !== 'rest' &&
     selectedWorkout.status === 'planned';
+
+  const [zoneGuideVisible, setZoneGuideVisible] = useState(false);
+  const easyPace = useMemo(() => rulesFor(profile).easyPace, [profile]);
 
   // The editor keeps its workout while the sheet animates out.
   const [editor, setEditor] = useState<{
@@ -238,6 +243,7 @@ export default function PlanOverview({
                   }
                   onEdit={canEdit ? openEditor : undefined}
                   onRunAgain={onRunAgain}
+                  onZoneGuide={() => setZoneGuideVisible(true)}
                 />
               </Pulse>
 
@@ -291,6 +297,13 @@ export default function PlanOverview({
         onReset={handleResetEdit}
         onDismiss={closeEditor}
         onClosed={handleEditorClosed}
+        reduceMotion={reduceMotion}
+      />
+
+      <ZoneGuideSheet
+        visible={zoneGuideVisible}
+        easyPace={easyPace}
+        onDismiss={() => setZoneGuideVisible(false)}
         reduceMotion={reduceMotion}
       />
     </>

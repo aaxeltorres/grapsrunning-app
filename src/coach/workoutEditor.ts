@@ -30,9 +30,9 @@ import {
   flattenSteps,
   isDemandingType,
   isRepeatGroup,
-  isRest,
   keyPace,
   totalDistance,
+  topZone,
   totalDuration,
   type Pace,
   type Plan,
@@ -510,15 +510,6 @@ export type RunStats = {
   topZone: Zone | null;
 };
 
-/** The hardest zone among the efforts (rests left out). */
-export function topZone(workout: Pick<Workout, 'segments'>): Zone | null {
-  let top: Zone | null = null;
-  for (const step of flattenSteps(workout.segments)) {
-    if (step.zone === undefined || isRest(step)) continue;
-    if (top === null || step.zone > top) top = step.zone;
-  }
-  return top;
-}
 
 /** Live numbers for the summary, from the draft's own steps and paces. */
 export function draftStats(
