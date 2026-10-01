@@ -23,6 +23,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 export default function ActiveRunScreen({ navigation, route }: Props) {
   const mode = route.params?.mode ?? DEFAULT_RUN_MODE;
   const goal = mode === 'goal' ? route.params?.goal : undefined;
+  const workout = mode === 'plan' ? route.params?.workout : undefined;
   const reduceMotion = useReduceMotion();
 
   // Theme progress (0 = light, 1 = dark) drives the background, the text and
@@ -175,6 +176,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
     calories,
     themeAnim,
     goal,
+    workout,
     onPause: handlePause,
     onResume: handleResume,
     onFinish: handleFinish,

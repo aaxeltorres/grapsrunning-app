@@ -62,6 +62,7 @@ export const colors = {
   planCardAccent: '#C2410C', // deep orange text on peach
   planSegmentMuted: '#FFD7B0', // warm-up / cool-down part of the segment bar
   planSelectedDayBg: '#E3F2FD', // selected (not today) day, soft Coach blue
+  segmentRecovery: '#5AC8FA', // recovery jogs and walks on the workout run screen, calm on dark and light
 
   // Bottom sheets
   sheetBackdrop: 'rgba(0,0,0,0.4)',

@@ -1,6 +1,7 @@
 import type { RunModeId } from '../run/runModes';
 import type { RunGoal } from '../run/goals';
 import type { Split } from '../run/splits';
+import type { Workout } from '../coach/plan';
 
 export type RouteCoordinate = {
   latitude: number;
@@ -21,8 +22,11 @@ export type RootStackParamList = {
   Routes: undefined;
   RunMode: undefined;
   GoalSetup: undefined;
-  /** No params (or no mode) starts a quick run. `goal` is for goal runs. */
-  ActiveRun: { mode?: RunModeId; goal?: RunGoal } | undefined;
+  /**
+   * No params (or no mode) starts a quick run. `goal` is for goal runs,
+   * `workout` for plan workout runs.
+   */
+  ActiveRun: { mode?: RunModeId; goal?: RunGoal; workout?: Workout } | undefined;
   RunResults: {
     distanceKm: number;
     durationSeconds: number;

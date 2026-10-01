@@ -8,6 +8,11 @@ export function lightImpact(): void {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
+/** Firmer tap, e.g. when a workout moves to its next segment. */
+export function mediumImpact(): void {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+}
+
 /** Light tick as a wheel picker moves to another row (iOS only). */
 export function selectionTick(): void {
   if (Platform.OS !== 'ios') return;

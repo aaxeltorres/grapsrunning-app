@@ -1,6 +1,7 @@
 import type { Animated } from 'react-native';
 import type { RunState } from '../hooks/useRunTracking';
 import type { RunGoal } from './goals';
+import type { Workout } from '../coach/plan';
 
 /**
  * What the ActiveRun shell hands to every run view. The shell owns the
@@ -16,6 +17,8 @@ export type RunViewProps = {
   themeAnim: Animated.Value;
   /** Goal runs only: the goals set on the setup screen. */
   goal?: RunGoal;
+  /** Plan workout runs only: the workout to execute, as stored (edits included). */
+  workout?: Workout;
   onPause: () => void;
   onResume: () => void;
   onFinish: () => void;
