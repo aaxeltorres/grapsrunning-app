@@ -100,7 +100,7 @@ State which level you chose and why, in one sentence, before touching any versio
 My friends test the app through Expo (branch `preview`), so updates have to be published there.
 - Publish automatically after a successful push when the task ended in a MINOR or MAJOR version bump (a big update).
 - Publish whenever I ask, whatever the bump size, with phrases like "publish", "publicá el update", "subí a Expo" or "eas update". Never publish on a PATCH or no-bump task unless I ask.
-- Before publishing: everything must be committed and pushed (changes only in `graphify-out/` don't count), and `npx tsc --noEmit` must pass.
+- Before publishing: everything must be committed and pushed, and `npx tsc --noEmit` must pass.
 - Command: `eas update --branch preview --message "<subject of the latest commit>" --non-interactive`. Don't ask me for a message; reuse the latest commit subject.
 - Do NOT publish if this task changed anything native (app.json plugins, permissions, infoPlist, or a dependency with native code): an OTA update cannot deliver that. Tell me a new build is needed instead.
 - Never run `eas build`.
@@ -116,6 +116,7 @@ When you add, move or remove a folder or module, update the project structure se
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+`graphify-out/` is generated, local and gitignored: `graphify update .` still runs after code changes, but its output is never committed.
 
 Rules:
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
