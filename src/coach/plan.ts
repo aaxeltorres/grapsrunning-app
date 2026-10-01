@@ -44,6 +44,12 @@ export type Workout = {
   date: ISODate;
   type: WorkoutType;
   status: WorkoutStatus;
+  /**
+   * The user changed this workout by hand (the workout editor sets it).
+   * Regenerating the plan never replaces an edited workout. Missing means
+   * false.
+   */
+  edited?: boolean;
   /** In order. Empty on rest days. */
   segments: WorkoutSegment[];
 };

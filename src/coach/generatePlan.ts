@@ -359,3 +359,36 @@ export async function generatePlan(
 ): Promise<Plan> {
   return buildMockPlan(profile, today);
 }
+
+/** A workout the user can still change: ahead of us, planned, never edited. */
+function isRegeneratable(workout: Workout, today: ISODate) {
+  return (
+    workout.date >= today && workout.status === 'planned' && !workout.edited
+  );
+}
+
+/**
+ * Rebuilds the plan after the runner's answers changed. Only the workouts
+ * that are still ahead, planned and not edited are replaced: past days,
+ * completed, skipped and edited workouts stay exactly as they are. The
+ * plan keeps its id, start date and length, and the new workouts follow
+ * the same week-by-week progression as the original.
+ */
+export async function regeneratePlan(
+  plan: Plan,
+  profile: RunnerProfile,
+  today: ISODate = todayISO(),
+): Promise<Plan> {
+  // Generated from the plan's own start, so week 1 stays week 1.
+  const fresh = await generatePlan(profile, plan.startDate);
+  const kept = plan.workouts.filter((w) => !isRegeneratable(w, today));
+  const taken = new Set(kept.map((w) => w.date));
+  const added = fresh.workouts.filter(
+    (w) => w.date >= today && !taken.has(w.date),
+  );
+
+  return {
+    ...plan,
+    workouts: [...kept, ...added].sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
