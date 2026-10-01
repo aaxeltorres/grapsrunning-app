@@ -1,5 +1,6 @@
 import type { RunModeId } from '../run/runModes';
 import type { RunGoal } from '../run/goals';
+import type { Split } from '../run/splits';
 
 export type RouteCoordinate = {
   latitude: number;
@@ -28,6 +29,11 @@ export type RootStackParamList = {
     route: RouteCoordinate[];
     /** Set when the run was a goal run. */
     goal?: RunGoal;
+    /** When the run started (ms since epoch). */
+    startedAt?: number;
+    calories?: number;
+    /** Per-kilometer splits, empty when there is no complete kilometer. */
+    splits?: Split[];
   };
 };
 

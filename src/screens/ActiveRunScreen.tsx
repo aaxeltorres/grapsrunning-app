@@ -11,6 +11,7 @@ import PlanRunView from '../components/PlanRunView';
 import { useRunTracking } from '../hooks/useRunTracking';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { DEFAULT_RUN_MODE } from '../run/runModes';
+import { computeSplits } from '../run/splits';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 
@@ -30,6 +31,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const [statusBarStyle, setStatusBarStyle] = useState<'dark' | 'light'>('dark');
   const [entered, setEntered] = useState(false);
+  const startedAtRef = useRef<number | null>(null);
 
   const {
     runState,
@@ -87,6 +89,7 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
   // Start tracking once the screen is dark and location access is granted.
   useEffect(() => {
     if (entered && permissionState === 'granted' && runState === 'idle') {
+      startedAtRef.current = Date.now();
       startRun();
     }
   }, [entered, permissionState, runState]);
@@ -127,6 +130,9 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
           longitude: coords.longitude,
         })),
       goal,
+      startedAt: startedAtRef.current ?? undefined,
+      calories,
+      splits: computeSplits(runRoute),
     });
   };
 
