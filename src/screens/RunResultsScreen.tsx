@@ -8,6 +8,7 @@ import TopBar from '../components/TopBar';
 import RunRouteCard from '../components/RunRouteCard';
 import RunSplits from '../components/RunSplits';
 import GoalResultsSection from '../components/GoalResultsSection';
+import PlanComparisonSection from '../components/PlanComparisonSection';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { isRunTooShort } from '../run/splits';
@@ -29,6 +30,7 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     startedAt,
     calories,
     splits = [],
+    planned,
   } = route.params;
   const reduceMotion = useReduceMotion();
   const tooShort = isRunTooShort(distanceKm, durationSeconds);
@@ -85,6 +87,19 @@ export default function RunResultsScreen({ route, navigation }: Props) {
       node: (
         <GoalResultsSection
           goal={goal}
+          distanceKm={distanceKm}
+          durationSeconds={durationSeconds}
+        />
+      ),
+    });
+  }
+  if (planned && !tooShort) {
+    sections.push({
+      key: 'planned',
+      node: (
+        <PlanComparisonSection
+          workout={planned.workout}
+          partial={planned.partial}
           distanceKm={distanceKm}
           durationSeconds={durationSeconds}
         />

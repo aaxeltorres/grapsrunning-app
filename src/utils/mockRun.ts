@@ -9,6 +9,7 @@
  */
 
 import type { RootStackParamList, RouteCoordinate } from '../navigation/types';
+import type { Workout } from '../coach/plan';
 import { computeSplits, type SplitPoint } from '../run/splits';
 
 type RunResultsParams = RootStackParamList['RunResults'];
@@ -144,4 +145,36 @@ export const mockNoRouteRun: RunResultsParams = {
   startedAt,
   calories: 208,
   splits: [],
+};
+
+/** An interval session as planned: 1 km warm-up, 6 × 400 m fast, 1 km cool-down. */
+const mockWorkout: Workout = {
+  id: 'w-mock',
+  date: '2026-10-01',
+  type: 'intervals',
+  status: 'planned',
+  segments: [
+    { id: 'wu', kind: 'warmup', target: { type: 'distance', meters: 1000 }, pace: null },
+    {
+      id: 'g',
+      repeat: 6,
+      steps: [
+        { id: 'w', kind: 'work', target: { type: 'distance', meters: 400 }, pace: { min: 285, max: 305 } },
+        { id: 'r', kind: 'recovery', target: { type: 'duration', seconds: 90 }, pace: null },
+      ],
+    },
+    { id: 'cd', kind: 'cooldown', target: { type: 'distance', meters: 1000 }, pace: null },
+  ],
+};
+
+/** The long run as a finished plan workout: planned vs actual. */
+export const mockPlanRun: RunResultsParams = {
+  ...mockLongRun,
+  planned: { workout: mockWorkout, partial: false },
+};
+
+/** The same, cut short: only part of the session was run. */
+export const mockPartialPlanRun: RunResultsParams = {
+  ...mockNoRouteRun,
+  planned: { workout: mockWorkout, partial: true },
 };
