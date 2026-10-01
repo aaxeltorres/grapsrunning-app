@@ -386,3 +386,7 @@ export function planDayMessage(key: PlanDayMessageKey, date: ISODate): string {
   if (typeof message === 'string') return message;
   return message[dayNumber(date) % message.length];
 }
+
+/** Mike's line at the top of the "Your profile" screen. */
+export const profileScreenMessage =
+  'Need to change something? Tap any answer. 👆';

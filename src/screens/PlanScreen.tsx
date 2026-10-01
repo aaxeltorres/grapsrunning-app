@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, motion, typography } from '../theme';
@@ -33,7 +34,7 @@ const SETTINGS_BUTTON_SIZE = 34;
  * Later visits open the plan directly.
  */
 export default function PlanScreen({ navigation }: Props) {
-  const { status, profile, plan, confirm, finish, reset } =
+  const { status, profile, plan, confirm, finish, reset, refresh } =
     usePlanOnboarding();
   const reduceMotion = useReduceMotion();
   const [today] = useState(todayISO);
@@ -68,6 +69,18 @@ export default function PlanScreen({ navigation }: Props) {
     });
   }, [chatExit, finish]);
 
+  // Coming back from "Your profile": its changes are saved in storage.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const handleOpenProfile = useCallback(
+    () => navigation.navigate('Profile'),
+    [navigation],
+  );
+
   // No structured execution yet: every workout starts a free run.
   const handleStartWorkout = useCallback(
     () => navigation.navigate('ActiveRun'),
@@ -99,7 +112,11 @@ export default function PlanScreen({ navigation }: Props) {
         title="Plan"
         // Dev-only: long-press the title to replay the onboarding.
         onTitleLongPress={__DEV__ ? handleDevReset : undefined}
-        right={status === 'done' ? <SettingsButton /> : undefined}
+        right={
+          status === 'done' ? (
+            <SettingsButton onPress={handleOpenProfile} />
+          ) : undefined
+        }
       />
 
       {status === 'pending' && (
@@ -134,13 +151,13 @@ export default function PlanScreen({ navigation }: Props) {
   );
 }
 
-/** Gear placeholder: plan settings will open from here. */
-function SettingsButton() {
+/** Gear: opens "Your profile", where the onboarding answers can be changed. */
+function SettingsButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Plan settings"
-      accessibilityHint="Coming soon"
+      accessibilityLabel="Your profile"
+      onPress={onPress}
       hitSlop={8}
       style={({ pressed }) => [
         styles.settingsButton,

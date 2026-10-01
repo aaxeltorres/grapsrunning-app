@@ -36,6 +36,9 @@ export function usePlanOnboarding() {
   const [profile, setProfile] = useState<RunnerProfile>(createEmptyProfile);
   const [plan, setPlan] = useState<Plan | null>(null);
   const mountedRef = useRef(true);
+  // Mirrors `status === 'done'` for callbacks that must stay stable.
+  const doneRef = useRef(false);
+  doneRef.current = status === 'done';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -99,6 +102,25 @@ export function usePlanOnboarding() {
     }
   }, []);
 
+  /**
+   * Reloads the answers and the plan from storage, e.g. after the profile
+   * screen changed them. Does nothing before the onboarding is done.
+   */
+  const refresh = useCallback(async () => {
+    if (!doneRef.current) return;
+    try {
+      const [storedProfile, storedPlan] = await Promise.all([
+        profileStorage.get(),
+        planStorage.get(),
+      ]);
+      if (!mountedRef.current) return;
+      setProfile(storedProfile);
+      if (storedPlan) setPlan(storedPlan);
+    } catch (error) {
+      console.warn('Failed to refresh Plan', error);
+    }
+  }, []);
+
   /** Switches the screen from the onboarding chat to the plan. */
   const finish = useCallback(() => setStatus('done'), []);
 
@@ -118,5 +140,5 @@ export function usePlanOnboarding() {
     setStatus('pending');
   }, []);
 
-  return { status, profile, plan, confirm, finish, reset };
+  return { status, profile, plan, confirm, finish, reset, refresh };
 }

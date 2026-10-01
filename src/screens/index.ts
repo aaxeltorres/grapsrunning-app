@@ -6,3 +6,4 @@ export { default as PlaceholderScreen } from './PlaceholderScreen';
 export { default as ActiveRunScreen } from './ActiveRunScreen';
 export { default as RunResultsScreen } from './RunResultsScreen';
 export { default as PlanScreen } from './PlanScreen';
+export { default as ProfileScreen } from './ProfileScreen';

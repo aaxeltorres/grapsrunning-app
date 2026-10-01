@@ -9,6 +9,7 @@ export type RootStackParamList = {
   Home: undefined;
   Stats: undefined;
   Plan: undefined;
+  Profile: undefined;
   // Placeholder destinations for the other Home feature cards.
   // Not part of the current screen scope — wired up as empty stubs
   // so navigation from Home doesn't dead-end.
