@@ -4,7 +4,7 @@
  * and, later, plan workouts can share it.
  *
  * - Pace: off track when the smoothed current pace is outside the target
- *   plus or minus the tolerance.
+ *   plus or minus the tolerance, or outside the target range when given.
  * - Finish (time with a distance): off track when the projected finish,
  *   elapsed time plus the remaining distance at the current pace, is later
  *   than the target.
@@ -32,8 +32,12 @@ export type AlertSample = {
 export type AlertTargets = {
   /** Target pace in seconds per km. */
   paceSecPerKm?: number;
+  /** Target pace range (s/km), used instead of `paceSecPerKm` when set. */
+  paceRange?: { min: number; max: number };
   /** Finish this distance (km) within this time (s). */
   finish?: { distanceKm: number; seconds: number };
+  /** Replaces the default start grace (e.g. per workout segment). */
+  grace?: { seconds: number; km: number };
 };
 
 type Debounced = {
@@ -95,15 +99,18 @@ export function updateAlerts(
     (s) => now - s.movingSeconds <= PACE_SMOOTHING_WINDOW_S,
   );
   const currentPace = windowPace(samples);
+  const grace = targets.grace ?? { seconds: ALERT_GRACE_S, km: ALERT_GRACE_KM };
   const ready =
-    now >= ALERT_GRACE_S &&
-    sample.distanceKm >= ALERT_GRACE_KM &&
+    now >= grace.seconds &&
+    sample.distanceKm >= grace.km &&
     currentPace !== null;
 
   const paceOff =
     ready &&
-    targets.paceSecPerKm !== undefined &&
-    Math.abs(currentPace - targets.paceSecPerKm) > PACE_TOLERANCE_S_PER_KM;
+    (targets.paceRange !== undefined
+      ? currentPace < targets.paceRange.min || currentPace > targets.paceRange.max
+      : targets.paceSecPerKm !== undefined &&
+        Math.abs(currentPace - targets.paceSecPerKm) > PACE_TOLERANCE_S_PER_KM);
 
   let finishOff = false;
   if (ready && targets.finish) {
