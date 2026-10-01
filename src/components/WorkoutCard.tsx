@@ -49,10 +49,19 @@ function formatPace(pace: Pace) {
     : `${formatPaceSeconds(pace.min)}–${formatPaceSeconds(pace.max)}`;
 }
 
-/** "Today · intervals", "Fri 2 · easy" */
+/** Whether the workout's name already says its type ("Long run"). */
+function nameIncludesType(workout: Workout) {
+  return displayName(workout)
+    .toLowerCase()
+    .includes(typeLabel(workout.type).toLowerCase());
+}
+
+/** "Today · intervals", "Fri 2"; the type only when the name lacks it. */
 function dayHeading(date: ISODate, today: ISODate, workout?: Workout) {
   const day = date === today ? 'Today' : formatDayLabel(date);
-  return workout ? `${day} · ${typeLabel(workout.type).toLowerCase()}` : day;
+  return workout && !nameIncludesType(workout)
+    ? `${day} · ${typeLabel(workout.type).toLowerCase()}`
+    : day;
 }
 
 type Props = {
@@ -232,9 +241,11 @@ export function WorkoutSummaryCard({
   const isTraining = workout !== undefined && workout.type !== 'rest';
   const title = !workout
     ? 'No workout planned'
-    : isTraining
-      ? `${typeLabel(workout.type)} · ${displayName(workout)}`
-      : 'Rest day';
+    : !isTraining
+      ? 'Rest day'
+      : nameIncludesType(workout)
+        ? displayName(workout)
+        : `${typeLabel(workout.type)} · ${displayName(workout)}`;
   const heading =
     date === today ? `${formatDayLabel(date)} · today` : formatDayLabel(date);
 
@@ -367,11 +378,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.lg,
   },
+  // Start takes the remaining width so its label stays on one line.
   startButton: {
-    flex: 3,
+    flex: 1,
   },
   editButton: {
-    flex: 2,
+    paddingHorizontal: spacing.xl,
   },
   // Drawn as a triangle so no icon set is needed (as on Home).
   playIcon: {
