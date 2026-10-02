@@ -17,6 +17,7 @@ import {
 import { buildSession, isAdvancedLevel, SESSION_SPECS } from './sessions';
 import {
   isBeginnerLevel,
+  knownLevel,
   planAnswersSnapshot,
   planLengthOf,
   type DayId,
@@ -86,6 +87,9 @@ const EASY_PACE: Record<LevelId, number> = {
   run_30: 420,
   run_5k: 375,
   run_10k_plus: 340,
+  run_half: 325,
+  run_marathon: 305,
+  run_competitive: 280,
 };
 
 /** Easy run distance (km) by level, for runners past run/walk. */
@@ -95,6 +99,9 @@ const EASY_KM: Record<LevelId, number> = {
   run_30: 4,
   run_5k: 5,
   run_10k_plus: 7,
+  run_half: 7,
+  run_marathon: 7,
+  run_competitive: 7,
 };
 
 type GoalFocus = '5k' | '10k' | 'distance' | 'general';
@@ -156,7 +163,7 @@ export type Rules = {
 };
 
 export function rulesFor(profile: RunnerProfile): Rules {
-  const level = profile.level ?? 'not_running';
+  const level = knownLevel(profile.level) ?? 'not_running';
   const beginner = isBeginnerLevel(level);
   const gentle = profile.injuryStatus === 'hurts_now';
   return {
@@ -361,6 +368,9 @@ const SESSION_LEVEL_SCALE: Record<LevelId, number> = {
   run_30: 0.85,
   run_5k: 1,
   run_10k_plus: 1.15,
+  run_half: 1.15,
+  run_marathon: 1.15,
+  run_competitive: 1.15,
 };
 
 /** A regenerative run is a bit shorter than the week's easy run. */
@@ -443,7 +453,7 @@ export function intervalMeters(focus: GoalFocus, week: number) {
  * the reps are the longer ones.
  */
 export function defaultIntervalReps(level: LevelId, week: number) {
-  const base = level === 'run_10k_plus' ? 7 : level === 'run_5k' ? 6 : 5;
+  const base = level === 'run_5k' ? 6 : isAdvancedLevel(level) ? 7 : 5;
   const reps = base + INTERVAL_REPS_BY_WEEK[cycleWeek(week)];
   return week % 2 === 0 ? reps : Math.max(3, Math.round(reps * LONG_REP_SHARE));
 }

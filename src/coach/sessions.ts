@@ -57,9 +57,17 @@ export function isSessionId(value: string): value is SessionId {
   return value in SESSION_SPECS;
 }
 
-/** Levels that may get the advanced sessions. */
+/** Levels that may get the advanced sessions: the 5K level and everything above it. */
+const ADVANCED_LEVELS: readonly LevelId[] = [
+  'run_5k',
+  'run_10k_plus',
+  'run_half',
+  'run_marathon',
+  'run_competitive',
+];
+
 export function isAdvancedLevel(level: LevelId) {
-  return level === 'run_5k' || level === 'run_10k_plus';
+  return ADVANCED_LEVELS.includes(level);
 }
 
 /** Flexible parts are whole minutes, as a coach writes them, and never... */

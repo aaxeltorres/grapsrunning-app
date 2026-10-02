@@ -112,6 +112,9 @@ export const planOnboardingScript: ChatScriptStep[] = [
       { id: 'run_30', label: 'I can run 30 minutes without stopping' },
       { id: 'run_5k', label: 'I run 5K comfortably' },
       { id: 'run_10k_plus', label: 'I regularly run 10K or more' },
+      { id: 'run_half', label: 'I regularly run half marathons' },
+      { id: 'run_marathon', label: 'I run marathons or train 5+ days a week' },
+      { id: 'run_competitive', label: 'I race competitively with structured training' },
     ],
     reactions: {
       not_running:
@@ -124,6 +127,12 @@ export const planOnboardingScript: ChatScriptStep[] = [
         "5K comfortably, nice work! We can start adding some fun challenges.",
       run_10k_plus:
         "Impressive! 🔥 You've got a strong engine, so we can train with real ambition.",
+      run_half:
+        "Half marathons on a regular basis, that's serious mileage! 🏃 Let's train with real ambition.",
+      run_marathon:
+        "Marathons or five days a week? Now we're talking! 🔥 You've built a huge base, so let's use it well.",
+      run_competitive:
+        "A competitor! 🏆 Structured training and racing, so we'll speak the same language. Let's get to work.",
     },
     defaultReaction: 'Thanks! That helps me pick the right starting point.',
   },

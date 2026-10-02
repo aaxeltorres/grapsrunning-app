@@ -26,7 +26,29 @@ export type LevelId =
   | 'run_walk'
   | 'run_30'
   | 'run_5k'
-  | 'run_10k_plus';
+  | 'run_10k_plus'
+  | 'run_half'
+  | 'run_marathon'
+  | 'run_competitive';
+
+const LEVEL_IDS: readonly LevelId[] = [
+  'not_running',
+  'run_walk',
+  'run_30',
+  'run_5k',
+  'run_10k_plus',
+  'run_half',
+  'run_marathon',
+  'run_competitive',
+];
+
+/**
+ * The level when `value` is a level id this version knows, otherwise
+ * `undefined` (a saved profile from another version): the same as no level.
+ */
+export function knownLevel(value: unknown): LevelId | undefined {
+  return LEVEL_IDS.find((id) => id === value);
+}
 
 /** Levels that build up with run/walk; they get no speed work. */
 const BEGINNER_LEVELS: readonly LevelId[] = ['not_running', 'run_walk'];
@@ -135,7 +157,7 @@ export function planAnswersSnapshot(profile: RunnerProfile): PlanAnswersSnapshot
   const hasInjury = injuries.some((injury) => injury !== 'none');
   return {
     goal: profile.goal,
-    level: profile.level,
+    level: knownLevel(profile.level),
     speedWork: profile.speedWork,
     availableDays: [...(profile.availableDays ?? [])].sort(),
     planLength: planLengthOf(profile),
