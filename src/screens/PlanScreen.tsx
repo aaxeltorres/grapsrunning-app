@@ -30,7 +30,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
 const CHAT_EXIT_MS = 280;
 const CHAT_EXIT_OFFSET = -16;
-const SETTINGS_BUTTON_SIZE = 44;
+const SETTINGS_BUTTON_SIZE = 52;
 // The "Plan" title row is 30 high: the bigger button overflows it evenly
 // so the TopBar keeps its height and the gear stays centred on the title.
 const TITLE_ROW_HEIGHT = 30;
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   },
   settingsIcon: {
     color: colors.textPrimary,
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 28,
+    lineHeight: 34,
   },
 });
