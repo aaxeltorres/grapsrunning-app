@@ -25,7 +25,6 @@ import {
   type Plan,
 } from '../coach/plan';
 import {
-  planCreatedMessage,
   planOnboardingScript,
   profileScreenMessage,
 } from '../coach/planOnboardingScript';
@@ -44,6 +43,7 @@ import Button from '../components/Button';
 import ChatBubble from '../components/ChatBubble';
 import IntensitySheet, { INTENSITY_LABELS } from '../components/IntensitySheet';
 import MikeAvatar from '../components/MikeAvatar';
+import PlanBuildingView from '../components/PlanBuildingView';
 import TopBar from '../components/TopBar';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { planStorage } from '../storage/planStorage';
@@ -55,6 +55,20 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 type LeaveAction = Parameters<Props['navigation']['dispatch']>[0];
 
 const UNANSWERED_LABEL = 'Not answered';
+
+// "Building your plan" stays at least this long, even if generation is instant.
+const PLAN_BUILD_MIN_MS = 1200;
+// A sheet that never reports it closed must not stall the flow.
+const SHEET_CLOSE_FALLBACK_MS = 1000;
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `closing`: Create a new plan was tapped and its sheet is closing.
+ * `building`: the loading state. `error`: it failed, the old plan is kept.
+ */
+type BuildPhase = 'idle' | 'closing' | 'building' | 'error';
 
 type SheetState = {
   questionId: QuestionId | null;
@@ -169,7 +183,16 @@ export default function ProfileScreen({ navigation }: Props) {
   const [syncVisible, setSyncVisible] = useState(false);
   // The plan length changed: the sheet says the new plan follows it.
   const [lengthChanged, setLengthChanged] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // Where "Create a new plan" is. The ref is read by the leave check and by
+  // double taps, which must see the change before the next render.
+  const [phase, setPhase] = useState<BuildPhase>('idle');
+  const phaseRef = useRef<BuildPhase>('idle');
+  const changePhase = useCallback((next: BuildPhase) => {
+    phaseRef.current = next;
+    setPhase(next);
+  }, []);
+  // Set from the tap of Keep current plan until the screen is left.
+  const keepingRef = useRef(false);
   const leaveActionRef = useRef<LeaveAction | null>(null);
   const allowLeaveRef = useRef(false);
 
@@ -178,7 +201,14 @@ export default function ProfileScreen({ navigation }: Props) {
       navigation.addListener('beforeRemove', (event) => {
         const plan = planRef.current;
         const current = savedRef.current;
-        if (allowLeaveRef.current || !plan || !current) return;
+        if (allowLeaveRef.current) return;
+        // Back swipe, back button or TopBar while the plan is being built:
+        // it can't be cancelled safely, so the screen stays until it ends.
+        if (phaseRef.current !== 'idle') {
+          event.preventDefault();
+          return;
+        }
+        if (!plan || !current) return;
         const answers = planAnswersSnapshot(current);
         const opened = openedWithRef.current ?? undefined;
         if (!planNeedsRebuild(plan, answers, opened)) return;
@@ -202,6 +232,11 @@ export default function ProfileScreen({ navigation }: Props) {
     [navigation],
   );
 
+  // No swipe-back while the plan is being built (beforeRemove also blocks it).
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: phase === 'idle' });
+  }, [navigation, phase]);
+
   const leave = () => {
     const action = leaveActionRef.current;
     leaveActionRef.current = null;
@@ -211,8 +246,28 @@ export default function ProfileScreen({ navigation }: Props) {
     // If the screen is still mounted afterwards, check again next time.
     setTimeout(() => {
       allowLeaveRef.current = false;
+      keepingRef.current = false;
+      if (phaseRef.current === 'building') changePhase('idle');
     }, 500);
   };
+
+  // Runs `action` once a sheet has fully closed (its `onClosed`) plus one
+  // frame: navigating while a Modal is still on screen or dismissing can
+  // leave the next screen unable to receive touches.
+  const afterCloseRef = useRef<(() => void) | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flushAfterClose = useCallback(() => {
+    clearTimeout(closeTimerRef.current);
+    const action = afterCloseRef.current;
+    afterCloseRef.current = null;
+    if (action) requestAnimationFrame(action);
+  }, []);
+  const runAfterSheetClosed = (action: () => void) => {
+    afterCloseRef.current = action;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(flushAfterClose, SHEET_CLOSE_FALLBACK_MS);
+  };
+  useEffect(() => () => clearTimeout(closeTimerRef.current), []);
 
   // Tells the Plan screen (below this one in the stack) that Mike should
   // announce the new plan. The held leave action is left as it is.
@@ -237,7 +292,6 @@ export default function ProfileScreen({ navigation }: Props) {
       const next = await createNewPlan(plan, current);
       await planStorage.save(next);
       planRef.current = next;
-      successNotification();
       return true;
     } catch (error) {
       console.warn('Failed to create plan', error);
@@ -245,20 +299,64 @@ export default function ProfileScreen({ navigation }: Props) {
     }
   };
 
-  // From the leave sheet. A failure is logged and the user still leaves,
-  // with the plan as it was.
-  const handleCreatePlan = async () => {
-    if (busy) return;
-    setBusy(true);
-    if (await createPlan()) announceNewPlan();
-    setBusy(false);
+  // The plan being built: started on tap, awaited by the loading state.
+  const workRef = useRef<Promise<boolean> | null>(null);
+
+  // Both entry points (the leave sheet and the row at the bottom) start here.
+  // Generation starts at once, the sheet closes, then the loading state holds
+  // for at least PLAN_BUILD_MIN_MS and the screen returns to Plan, where Mike
+  // announces the new plan.
+  const startBuild = () => {
+    if (phaseRef.current !== 'idle' || keepingRef.current) return;
+    changePhase('closing');
+    workRef.current = createPlan();
+    runAfterSheetClosed(() => changePhase('building'));
     setSyncVisible(false);
-    leave();
+    setCreateVisible(false);
+  };
+
+  useEffect(() => {
+    if (phase !== 'building') return;
+    let active = true;
+    Promise.all([
+      workRef.current ?? Promise.resolve(false),
+      wait(PLAN_BUILD_MIN_MS),
+    ]).then(([created]) => {
+      if (!active) return;
+      if (!created) {
+        changePhase('error');
+        return;
+      }
+      successNotification();
+      announceNewPlan();
+      leave();
+    });
+    return () => {
+      active = false;
+    };
+    // announceNewPlan and leave only read refs and `navigation`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, changePhase]);
+
+  const retryBuild = () => {
+    if (phaseRef.current !== 'error') return;
+    workRef.current = createPlan();
+    changePhase('building');
+  };
+
+  // Back to Your profile with the old plan. The leave check still applies.
+  const cancelBuild = () => {
+    if (phaseRef.current !== 'error') return;
+    leaveActionRef.current = null;
+    workRef.current = null;
+    changePhase('idle');
   };
 
   // Remembers the answers kept, so the sheet does not come back for them.
+  // No loading: the sheet closes completely, then the screen is left.
   const handleKeepPlan = async () => {
-    if (busy) return;
+    if (phaseRef.current !== 'idle' || keepingRef.current) return;
+    keepingRef.current = true;
     lightImpact();
     const current = savedRef.current;
     if (current) {
@@ -273,26 +371,16 @@ export default function ProfileScreen({ navigation }: Props) {
         console.warn('Failed to save kept answers', error);
       }
     }
+    runAfterSheetClosed(leave);
     setSyncVisible(false);
-    leave();
   };
 
   // "Create a new plan" on demand, from the row at the bottom.
   const [createVisible, setCreateVisible] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [mikeLine, setMikeLine] = useState(profileScreenMessage);
 
   const openCreate = () => {
-    if (sheet.active || busy) return;
+    if (sheet.active || phaseRef.current !== 'idle') return;
     setCreateVisible(true);
-  };
-
-  const handleCreateNow = async () => {
-    if (creating) return;
-    setCreating(true);
-    if (await createPlan()) setMikeLine(planCreatedMessage);
-    setCreating(false);
-    setCreateVisible(false);
   };
 
   // "Intensity by": a setting, saved right away. It never makes the plan
@@ -349,8 +437,7 @@ export default function ProfileScreen({ navigation }: Props) {
             <MikeAvatar />
             <View style={styles.mikeBubble}>
               <ChatBubble
-                key={mikeLine}
-                text={mikeLine}
+                text={profileScreenMessage}
                 sender="mike"
                 reduceMotion={reduceMotion}
               />
@@ -423,9 +510,8 @@ export default function ProfileScreen({ navigation }: Props) {
       <BottomSheet
         visible={syncVisible}
         // Tapping outside stays on the screen.
-        onDismiss={() => {
-          if (!busy) setSyncVisible(false);
-        }}
+        onDismiss={() => setSyncVisible(false)}
+        onClosed={flushAfterClose}
         dragAnywhere
         reduceMotion={reduceMotion}
       >
@@ -445,13 +531,11 @@ export default function ProfileScreen({ navigation }: Props) {
         <Button
           label="Create a new plan"
           variant="accent"
-          loading={busy}
-          onPress={handleCreatePlan}
+          onPress={startBuild}
         />
         <Button
           label="Keep current plan"
           variant="secondary"
-          disabled={busy}
           onPress={handleKeepPlan}
           style={styles.keepButton}
         />
@@ -459,9 +543,8 @@ export default function ProfileScreen({ navigation }: Props) {
 
       <BottomSheet
         visible={createVisible}
-        onDismiss={() => {
-          if (!creating) setCreateVisible(false);
-        }}
+        onDismiss={() => setCreateVisible(false)}
+        onClosed={flushAfterClose}
         dragAnywhere
         reduceMotion={reduceMotion}
       >
@@ -478,17 +561,24 @@ export default function ProfileScreen({ navigation }: Props) {
         <Button
           label="Create a new plan"
           variant="accent"
-          loading={creating}
-          onPress={handleCreateNow}
+          onPress={startBuild}
         />
         <Button
           label="Cancel"
           variant="secondary"
-          disabled={creating}
           onPress={() => setCreateVisible(false)}
           style={styles.keepButton}
         />
       </BottomSheet>
+
+      {(phase === 'building' || phase === 'error') && (
+        <PlanBuildingView
+          state={phase}
+          reduceMotion={reduceMotion}
+          onRetry={retryBuild}
+          onCancel={cancelBuild}
+        />
+      )}
     </SafeAreaView>
   );
 }

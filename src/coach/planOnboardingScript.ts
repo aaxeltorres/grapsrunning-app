@@ -441,6 +441,14 @@ export const profileScreenMessage =
 export const planCreatedMessage =
   "Fresh plan, fresh start! I rebuilt your schedule around your answers. Let's go! 🚀";
 
+/** Mike's line while "Create a new plan" is building the schedule. */
+export const planBuildingMessage =
+  "Give me a moment, I'm building your plan around your answers. 🛠️";
+
+/** Mike's line when the new plan could not be built; the old one is kept. */
+export const planBuildFailedMessage =
+  "I couldn't build your plan this time. Your current plan is safe, nothing changed. 💙";
+
 /**
  * Mike's line in the workout editor: one per run type and length band
  * (shortest third, middle third, longest third of what the type allows).
