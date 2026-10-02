@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  PanResponder,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   type LayoutChangeEvent,
-  type ViewStyle,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SESSION_NAMES, type SessionId } from '../coach/plan';
 import { workoutType, type EditorKind } from '../coach/workoutEditor';
@@ -19,17 +21,9 @@ const CARD_HEIGHT = 100;
 const CARD_GAP = spacing.sm;
 const STEP = CARD_WIDTH + CARD_GAP;
 const SIDE_SCALE = 0.86;
-// Dragging past the first or last card moves it this share of the finger.
-const EDGE_RESISTANCE = 0.35;
-// How far a flick carries the deck: milliseconds of release velocity.
-const FLICK_MS = 160;
-const DRAG_START_PX = 6;
-const SPRING = { stiffness: 300, damping: 26, mass: 1 } as const;
+// Without a momentum phase (a slow release), commit after this pause.
+const SETTLE_FALLBACK_MS = 120;
 const WHITE_SOFT = 'rgba(255,255,255,0.85)';
-
-// Web: sideways drags belong to the deck, not to the browser (which would
-// treat them as a swipe back); vertical drags still scroll the sheet.
-const WEB_PAN_Y = { touchAction: 'pan-y' } as unknown as ViewStyle;
 
 type CardInfo = { emoji: string; label: string; hint: string };
 
@@ -78,286 +72,276 @@ type Props = {
   reduceMotion?: boolean;
 };
 
+type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
+
 /**
- * Swipeable deck of run types. The centered card is the selected one: it
- * grows, takes the type's color and snaps into place with a light haptic
- * tick. Built on PanResponder so a finger and a mouse behave the same.
+ * Run types on a native horizontal scroll: a flick travels across many
+ * types with momentum and the tiles snap so one sits in the center. The
+ * centered tile takes its type's color as it passes (driven on the native
+ * thread), with a light haptic tick; the selection is committed when the
+ * scroll settles, or right away when a tile is tapped (it scrolls to the
+ * center).
  */
-export default function WorkoutTypeCarousel({
+function WorkoutTypeCarousel({
   kinds,
   selected,
   onSelect,
   reduceMotion = false,
 }: Props) {
   const [width, setWidth] = useState(0);
-  const lastIndex = kinds.length - 1;
   const selectedIndex = Math.max(0, kinds.indexOf(selected));
 
-  // Position of the deck in card units: 0 shows the first card centered,
-  // fractions appear while dragging.
-  const pos = useRef(new Animated.Value(selectedIndex)).current;
-  const posRef = useRef(selectedIndex);
+  const scrollRef = useRef<ScrollView>(null);
+  // Scroll offset, on the native thread: every tile's look derives from it.
+  const scrollX = useRef(new Animated.Value(selectedIndex * STEP)).current;
   const indexRef = useRef(selectedIndex);
-  const startPosRef = useRef(selectedIndex);
   const tickIndexRef = useRef(selectedIndex);
-  const draggingRef = useRef(false);
-  // Set once a gesture is clearly a sideways swipe (otherwise it is a tap).
-  const swipingRef = useRef(false);
-  const startIndexRef = useRef(selectedIndex);
-  const touchXRef = useRef(0);
-  const touchStartRef = useRef({ x: 0, y: 0 });
-  const widthRef = useRef(0);
+  const momentumRef = useRef(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const id = pos.addListener(({ value }) => {
-      posRef.current = value;
-    });
-    return () => pos.removeListener(id);
-  }, [pos]);
+  const latest = useRef({ kinds, onSelect, reduceMotion });
+  latest.current = { kinds, onSelect, reduceMotion };
 
-  const latest = useRef({ kinds, onSelect, reduceMotion, lastIndex });
-  latest.current = { kinds, onSelect, reduceMotion, lastIndex };
+  const indexAt = useCallback(
+    (x: number) =>
+      Math.min(
+        latest.current.kinds.length - 1,
+        Math.max(0, Math.round(x / STEP)),
+      ),
+    [],
+  );
 
-  const settleAt = (index: number) => {
-    pos.stopAnimation();
-    if (latest.current.reduceMotion) {
-      pos.setValue(index);
-      return;
-    }
-    Animated.spring(pos, {
-      toValue: index,
-      ...SPRING,
-      useNativeDriver: false,
-    }).start();
-  };
-
-  const commit = (index: number) => {
+  const commit = useCallback((index: number) => {
     const { kinds: current, onSelect: select } = latest.current;
     if (index !== tickIndexRef.current) selectionTick();
     tickIndexRef.current = index;
-    settleAt(index);
     if (index !== indexRef.current) {
       indexRef.current = index;
       select(current[index]);
     }
-  };
+  }, []);
 
-  // The selection changed from outside (e.g. a new editor session).
-  useEffect(() => {
-    if (draggingRef.current || selectedIndex === indexRef.current) return;
-    indexRef.current = selectedIndex;
-    tickIndexRef.current = selectedIndex;
-    settleAt(selectedIndex);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIndex]);
+  const clearSettle = useCallback(() => {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+  }, []);
+  useEffect(() => clearSettle, [clearSettle]);
 
-  const clampIndex = (value: number) =>
-    Math.min(latest.current.lastIndex, Math.max(0, value));
-
-  const panResponder = useMemo(
+  // The offset is native-driven; the JS listener only ticks when the
+  // centered tile changes.
+  const onScroll = useMemo(
     () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        // The sheet's scroll view may take the touch only when the finger
-        // is clearly going up or down.
-        onPanResponderTerminationRequest: (event) => {
-          const { pageX, pageY } = event.nativeEvent;
-          const dx = Math.abs(pageX - touchStartRef.current.x);
-          const dy = Math.abs(pageY - touchStartRef.current.y);
-          return dy > DRAG_START_PX && dy > dx;
-        },
-        onPanResponderGrant: (event) => {
-          pos.stopAnimation();
-          draggingRef.current = true;
-          swipingRef.current = false;
-          startPosRef.current = posRef.current;
-          startIndexRef.current = clampIndex(Math.round(posRef.current));
-          touchXRef.current = event.nativeEvent.locationX;
-          touchStartRef.current = {
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          };
-        },
-        onPanResponderMove: (_, g) => {
-          if (
-            !swipingRef.current &&
-            Math.abs(g.dx) > DRAG_START_PX &&
-            Math.abs(g.dx) > Math.abs(g.dy)
-          ) {
-            swipingRef.current = true;
-          }
-          if (!swipingRef.current) return;
-
-          const raw = startPosRef.current - g.dx / STEP;
-          const edge = latest.current.lastIndex;
-          // Past either end the deck resists, like a rubber band.
-          const shown =
-            raw < 0
-              ? raw * EDGE_RESISTANCE
-              : raw > edge
-                ? edge + (raw - edge) * EDGE_RESISTANCE
-                : raw;
-          pos.setValue(shown);
-          const nearest = clampIndex(Math.round(raw));
-          if (nearest !== tickIndexRef.current) {
-            tickIndexRef.current = nearest;
+      Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
+        useNativeDriver: true,
+        listener: (event: ScrollEvent) => {
+          const index = indexAt(event.nativeEvent.contentOffset.x);
+          if (index !== tickIndexRef.current) {
+            tickIndexRef.current = index;
             selectionTick();
           }
         },
-        onPanResponderRelease: (_, g) => {
-          draggingRef.current = false;
-          const start = startIndexRef.current;
-          if (!swipingRef.current) {
-            // A tap: the card under the finger, measured from the center.
-            const offset = (touchXRef.current - widthRef.current / 2) / STEP;
-            commit(clampIndex(Math.round(posRef.current + offset)));
-            return;
-          }
-          swipingRef.current = false;
-          const raw = startPosRef.current - g.dx / STEP;
-          // A flick carries on a little further in its direction...
-          const projected = raw - (g.vx * FLICK_MS) / STEP;
-          // ...but never more than one card from where the swipe began.
-          commit(
-            Math.min(start + 1, Math.max(start - 1, clampIndex(Math.round(projected)))),
-          );
-        },
-        onPanResponderTerminate: () => {
-          draggingRef.current = false;
-          swipingRef.current = false;
-          commit(clampIndex(Math.round(posRef.current)));
-        },
       }),
-    // `pos` and the refs are stable; everything else is read from `latest`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pos],
+    [scrollX, indexAt],
   );
 
-  const handleLayout = (event: LayoutChangeEvent) => {
-    widthRef.current = event.nativeEvent.layout.width;
-    setWidth(event.nativeEvent.layout.width);
+  const handleScrollBeginDrag = () => {
+    momentumRef.current = false;
+    clearSettle();
   };
 
-  const trackStyle = {
-    marginLeft: (width - CARD_WIDTH) / 2,
-    transform: [
-      {
-        translateX: pos.interpolate({
-          inputRange: [0, Math.max(1, lastIndex)],
-          outputRange: [0, -Math.max(1, lastIndex) * STEP],
-        }),
-      },
-    ],
+  const handleScrollEndDrag = (event: ScrollEvent) => {
+    const x = event.nativeEvent.contentOffset.x;
+    clearSettle();
+    // A flick goes on with momentum; a slow release may not.
+    settleTimer.current = setTimeout(() => {
+      if (!momentumRef.current) commit(indexAt(x));
+    }, SETTLE_FALLBACK_MS);
   };
+
+  const handleMomentumBegin = () => {
+    momentumRef.current = true;
+    clearSettle();
+  };
+
+  const handleMomentumEnd = (event: ScrollEvent) => {
+    momentumRef.current = false;
+    commit(indexAt(event.nativeEvent.contentOffset.x));
+  };
+
+  const scrollToIndex = useCallback((index: number) => {
+    scrollRef.current?.scrollTo({
+      x: index * STEP,
+      animated: !latest.current.reduceMotion,
+    });
+  }, []);
+
+  // A tap brings the tile to the center and selects it.
+  const handlePress = useCallback(
+    (index: number) => {
+      scrollToIndex(index);
+      commit(index);
+    },
+    [scrollToIndex, commit],
+  );
+
+  // The selection changed from outside (e.g. a new editor session).
+  useEffect(() => {
+    if (selectedIndex === indexRef.current) return;
+    indexRef.current = selectedIndex;
+    tickIndexRef.current = selectedIndex;
+    scrollToIndex(selectedIndex);
+  }, [selectedIndex, scrollToIndex]);
+
+  const handleLayout = (event: LayoutChangeEvent) =>
+    setWidth(event.nativeEvent.layout.width);
+
+  // Side room so the first and last tiles can reach the center.
+  const side = Math.max(0, (width - CARD_WIDTH) / 2);
 
   return (
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel="Run type"
       onLayout={handleLayout}
-      style={[styles.viewport, WEB_PAN_Y]}
-      {...panResponder.panHandlers}
+      style={styles.viewport}
     >
-      {/* Cards ignore touches: the deck itself reads taps and swipes, so a
-          card can never keep a gesture away from the swipe. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.track, trackStyle]}
-      >
-        {kinds.map((kind, index) => (
-          <Card
-            key={kind}
-            kind={kind}
-            index={index}
-            pos={pos}
-            selected={kind === selected}
-            onActivate={() => commit(index)}
-          />
-        ))}
-      </Animated.View>
+      {width > 0 && (
+        <Animated.ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          // Opens on the current type.
+          contentOffset={{ x: indexRef.current * STEP, y: 0 }}
+          contentContainerStyle={[styles.track, { paddingHorizontal: side }]}
+          snapToInterval={STEP}
+          decelerationRate="fast"
+          scrollEventThrottle={16}
+          onScroll={onScroll}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onScrollEndDrag={handleScrollEndDrag}
+          onMomentumScrollBegin={handleMomentumBegin}
+          onMomentumScrollEnd={handleMomentumEnd}
+        >
+          {kinds.map((kind, index) => (
+            <Card
+              key={kind}
+              kind={kind}
+              index={index}
+              scrollX={scrollX}
+              selected={kind === selected}
+              onPress={handlePress}
+            />
+          ))}
+        </Animated.ScrollView>
+      )}
     </View>
   );
 }
 
+export default React.memo(WorkoutTypeCarousel);
+
 type CardProps = {
   kind: EditorKind;
   index: number;
-  pos: Animated.Value;
+  scrollX: Animated.Value;
   selected: boolean;
-  /** Screen readers: double tap selects the card. */
-  onActivate: () => void;
+  onPress: (index: number) => void;
 };
 
+/**
+ * A tile: a gray face with dark text and, on top, the type's colored face
+ * with white text, faded in as the tile nears the center. Only opacity
+ * and scale change, so the native driver runs it.
+ */
 const Card = React.memo(function Card({
   kind,
   index,
-  pos,
+  scrollX,
   selected,
-  onActivate,
+  onPress,
 }: CardProps) {
   const info = CARDS[kind];
   const color = colorFor(kind);
-  const range = [index - 1, index, index + 1];
-  const mix = <T extends string | number>(side: T, center: T) => ({
-    inputRange: range,
-    outputRange: [side, center, side],
-    extrapolate: 'clamp' as const,
-  });
+  const { scale, opacity, colored } = useMemo(() => {
+    const inputRange = [(index - 1) * STEP, index * STEP, (index + 1) * STEP];
+    const mix = (side: number, center: number) =>
+      scrollX.interpolate({
+        inputRange,
+        outputRange: [side, center, side],
+        extrapolate: 'clamp',
+      });
+    return {
+      scale: mix(SIDE_SCALE, 1),
+      opacity: mix(0.7, 1),
+      colored: mix(0, 1),
+    };
+  }, [scrollX, index]);
 
   return (
-    <Animated.View
-      accessible
+    <Pressable
       accessibilityRole="radio"
       accessibilityLabel={info.label}
       accessibilityState={{ checked: selected }}
-      onAccessibilityTap={onActivate}
-      style={[
-        styles.card,
-        {
-          backgroundColor: pos.interpolate(mix(colors.surfaceGray, color)),
-          transform: [{ scale: pos.interpolate(mix(SIDE_SCALE, 1)) }],
-          opacity: pos.interpolate(mix(0.7, 1)),
-        },
-      ]}
+      onPress={() => onPress(index)}
     >
+      <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
+        <Face info={info} />
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.card,
+            styles.coloredFace,
+            { backgroundColor: color, opacity: colored },
+          ]}
+        >
+          <Face info={info} onColor />
+        </Animated.View>
+      </Animated.View>
+    </Pressable>
+  );
+});
+
+function Face({ info, onColor = false }: { info: CardInfo; onColor?: boolean }) {
+  return (
+    <>
       <Text style={styles.emoji}>{info.emoji}</Text>
-      <Animated.Text
+      <Text
         numberOfLines={1}
         // Session names such as "Extensive aerobic" shrink to fit the card.
         adjustsFontSizeToFit
         minimumFontScale={0.75}
         style={[
           typography.headline,
-          { color: pos.interpolate(mix(colors.textPrimary, colors.white)) },
+          { color: onColor ? colors.white : colors.textPrimary },
         ]}
       >
         {info.label}
-      </Animated.Text>
-      <Animated.Text
+      </Text>
+      <Text
         numberOfLines={1}
         style={[
           typography.caption,
-          { color: pos.interpolate(mix(colors.textSecondary, WHITE_SOFT)) },
+          { color: onColor ? WHITE_SOFT : colors.textSecondary },
         ]}
       >
         {info.hint}
-      </Animated.Text>
-    </Animated.View>
+      </Text>
+    </>
   );
-});
+}
 
 const styles = StyleSheet.create({
   viewport: {
-    // Grows with the selected card, so its shadow is never clipped.
-    paddingVertical: spacing.xxs,
-    overflow: 'hidden',
-    // A mouse drag must swipe the deck, not select the text under it.
+    // Tiles slide out to the screen edges, past the sheet's side padding.
+    marginHorizontal: -spacing.lg,
+    // A mouse drag must scroll the tiles, not select the text under them.
     userSelect: 'none',
   },
   track: {
     flexDirection: 'row',
     gap: CARD_GAP,
+    // Room around the centered tile, so nothing is clipped.
+    paddingVertical: spacing.xxs,
   },
   card: {
     width: CARD_WIDTH,
@@ -367,6 +351,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
     paddingHorizontal: spacing.xs,
+    backgroundColor: colors.surfaceGray,
+  },
+  coloredFace: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   emoji: {
     fontSize: 28,
