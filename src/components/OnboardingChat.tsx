@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Animated,
+  ScrollView,
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   buildTranscript,
@@ -32,6 +39,10 @@ import TypingIndicator from './TypingIndicator';
 const AVATAR_FADE_MS = 150;
 // Time to read Mike's last message before `onComplete`.
 const COMPLETE_HOLD_MS = 1400;
+// Within this distance of the bottom the chat keeps following new messages.
+const STICK_TO_BOTTOM_PX = 80;
+// Scroll events only feed refs, so a coarse rate is plenty.
+const SCROLL_EVENT_THROTTLE_MS = 32;
 
 type Props = {
   /** Script to play. Must be a stable reference, e.g. a module constant. */
@@ -222,23 +233,55 @@ export default function OnboardingChat({
     return () => clearTimeout(timer);
   }, [transcript.isComplete, isIdle]);
 
-  // Follow the conversation when something new appears at the bottom.
-  // Edits further up don't move the scroll position.
+  // Follow the conversation when something new appears at the bottom, once
+  // per new entry and only after it has been laid out (so the scroll lands
+  // on the real end). It never moves a list the user is dragging or has
+  // scrolled up in. Everything here lives in refs: scrolling causes no
+  // renders.
   const tail = displayItems[displayItems.length - 1];
   const tailKey = tail ? entryKey(tail) : null;
+  const stickToBottomRef = useRef(true);
+  const draggingRef = useRef(false);
+  const userMomentumRef = useRef(false);
+  const pendingScrollRef = useRef(false);
   const hasScrolledRef = useRef(false);
+  const contentHeightRef = useRef(0);
+
   useEffect(() => {
-    if (!tailKey) return;
-    const animated = hasScrolledRef.current && !reduceMotion;
-    hasScrolledRef.current = true;
-    const frame = requestAnimationFrame(() =>
-      scrollRef.current?.scrollToEnd({ animated }),
-    );
-    return () => cancelAnimationFrame(frame);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (tailKey) pendingScrollRef.current = true;
   }, [tailKey]);
 
-  const groups = groupEntries(displayItems);
+  const updateStick = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distance =
+      contentSize.height - layoutMeasurement.height - contentOffset.y;
+    stickToBottomRef.current = distance <= STICK_TO_BOTTOM_PX;
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Our own scrollToEnd must not look like the user leaving the bottom.
+    if (draggingRef.current || userMomentumRef.current) updateStick(event);
+  };
+
+  const handleContentSizeChange = (_width: number, height: number) => {
+    const grew = height > contentHeightRef.current;
+    contentHeightRef.current = height;
+    const isNewTail = pendingScrollRef.current;
+    pendingScrollRef.current = false;
+    if (!grew || draggingRef.current || !stickToBottomRef.current) return;
+    // Animated for a new entry; a correction of the same entry (the bubble
+    // replacing the typing dots) just snaps, so animations never chase.
+    const animated = isNewTail && hasScrolledRef.current && !reduceMotion;
+    hasScrolledRef.current = true;
+    scrollRef.current?.scrollToEnd({ animated });
+  };
+
+  const contentStyle = useMemo(
+    () => [styles.content, { paddingBottom: insets.bottom + spacing.xl }],
+    [insets.bottom],
+  );
+
+  const groups = useMemo(() => groupEntries(displayItems), [displayItems]);
   const sheetQuestion = sheet.questionId
     ? questions.get(sheet.questionId) ?? null
     : null;
@@ -248,11 +291,25 @@ export default function OnboardingChat({
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: insets.bottom + spacing.xl },
-        ]}
+        contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={SCROLL_EVENT_THROTTLE_MS}
+        onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        onScrollBeginDrag={() => {
+          draggingRef.current = true;
+        }}
+        onScrollEndDrag={(event) => {
+          draggingRef.current = false;
+          updateStick(event);
+        }}
+        onMomentumScrollBegin={() => {
+          userMomentumRef.current = true;
+        }}
+        onMomentumScrollEnd={(event) => {
+          userMomentumRef.current = false;
+          updateStick(event);
+        }}
       >
         {groups.map((group, index) => (
           // Groups are only appended or edited in place, so the index is
@@ -288,15 +345,50 @@ export default function OnboardingChat({
   );
 }
 
-function ChatGroup({
-  group,
-  reduceMotion,
-  questions,
-  answerPressHandlers,
-  onRecapRowPress,
-  onRecapConfirm,
-  canConfirmRecap,
-}: {
+/**
+ * Same entries? Items are rebuilt with every transcript change, so compare
+ * what is drawn: only the group that actually changed re-renders.
+ */
+function entriesEqual(a: ChatDisplayItem, b: ChatDisplayItem) {
+  if (a.type === 'typing' || b.type === 'typing') {
+    return a.type === b.type && entryKey(a) === entryKey(b);
+  }
+  if (a.animate !== b.animate) return false;
+  const x = a.item;
+  const y = b.item;
+  if (x.id !== y.id || x.kind !== y.kind) return false;
+  if (x.kind === 'mike' && y.kind === 'mike') return x.text === y.text;
+  if (x.kind === 'answer' && y.kind === 'answer') {
+    return x.text === y.text && x.questionId === y.questionId;
+  }
+  if (x.kind === 'recap' && y.kind === 'recap') {
+    return (
+      x.title === y.title &&
+      x.confirmLabel === y.confirmLabel &&
+      x.confirmed === y.confirmed &&
+      JSON.stringify(x.rows) === JSON.stringify(y.rows)
+    );
+  }
+  return false;
+}
+
+function groupPropsEqual(prev: ChatGroupProps, next: ChatGroupProps) {
+  return (
+    prev.reduceMotion === next.reduceMotion &&
+    prev.questions === next.questions &&
+    prev.answerPressHandlers === next.answerPressHandlers &&
+    prev.onRecapRowPress === next.onRecapRowPress &&
+    prev.onRecapConfirm === next.onRecapConfirm &&
+    prev.canConfirmRecap === next.canConfirmRecap &&
+    prev.group.sender === next.group.sender &&
+    prev.group.entries.length === next.group.entries.length &&
+    prev.group.entries.every((entry, i) =>
+      entriesEqual(entry, next.group.entries[i]),
+    )
+  );
+}
+
+type ChatGroupProps = {
   group: MessageGroup;
   reduceMotion: boolean;
   questions: Map<QuestionId, QuestionStep>;
@@ -304,7 +396,17 @@ function ChatGroup({
   onRecapRowPress: (id: QuestionId) => void;
   onRecapConfirm: () => void;
   canConfirmRecap: boolean;
-}) {
+};
+
+const ChatGroup = React.memo(function ChatGroup({
+  group,
+  reduceMotion,
+  questions,
+  answerPressHandlers,
+  onRecapRowPress,
+  onRecapConfirm,
+  canConfirmRecap,
+}: ChatGroupProps) {
   const isMike = group.sender === 'mike';
   const first = group.entries[0];
   const lastIndex = group.entries.length - 1;
@@ -375,7 +477,7 @@ function ChatGroup({
       </View>
     </View>
   );
-}
+}, groupPropsEqual);
 
 /** Mike's avatar, faded in with the first bubble of his group. */
 function FadingAvatar({ animate }: { animate: boolean }) {

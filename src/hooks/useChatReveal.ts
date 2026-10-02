@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptItem } from '../coach/conversation';
 
 // Lets the screen transition settle before Mike starts typing.
@@ -58,7 +58,10 @@ export function useChatReveal(
   const onRevealRef = useRef(onReveal);
   onRevealRef.current = onReveal;
 
-  const next = items.find((item) => !revealed.has(item.id));
+  const next = useMemo(
+    () => items.find((item) => !revealed.has(item.id)),
+    [items, revealed],
+  );
 
   // Forget items that left the transcript (e.g. a reaction replaced by an
   // edit), so they play again if they come back.
@@ -113,14 +116,19 @@ export function useChatReveal(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [next?.id]);
 
-  const displayItems: ChatDisplayItem[] = [];
-  for (const item of items) {
-    if (revealed.has(item.id)) {
-      displayItems.push({ type: 'item', item, animate: !instantIds.has(item.id) });
-    } else if (item.id === typingId) {
-      displayItems.push({ type: 'typing', id: item.id });
+  // Rebuilt only when something is revealed, so a re-render of the screen
+  // (a sheet opening, say) hands the chat the very same entries.
+  const displayItems = useMemo(() => {
+    const list: ChatDisplayItem[] = [];
+    for (const item of items) {
+      if (revealed.has(item.id)) {
+        list.push({ type: 'item', item, animate: !instantIds.has(item.id) });
+      } else if (item.id === typingId) {
+        list.push({ type: 'typing', id: item.id });
+      }
     }
-  }
+    return list;
+  }, [items, revealed, typingId, instantIds]);
 
   return {
     displayItems,

@@ -25,7 +25,7 @@ Not implemented yet (Home cards exist as placeholders): AI Coach chat, Routes. P
 - `src/components`: reusable UI components
 - `src/screens`: app screens
 - `src/navigation`: navigation and route types
-- `src/hooks`: shared hooks, including run tracking and the chat engine (`useChatReveal`)
+- `src/hooks`: shared hooks, including run tracking and the chat engine (`useChatReveal`, which hands out stable `displayItems`; `OnboardingChat` memoizes each message group and follows the conversation with one post-layout scroll per new entry, never while the user is dragging or has scrolled up)
 - `src/coach`: Coach Mike's scripted conversations, pure TypeScript (no React)
   - `planOnboardingScript.ts`: the Plan onboarding script. All of Mike's copy, questions, options and reactions live here.
   - `types.ts`: script step types (message, question, recap).
