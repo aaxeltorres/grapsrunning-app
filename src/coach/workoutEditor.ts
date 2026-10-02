@@ -370,18 +370,50 @@ export function amountForMainEnd(
   endSeconds: number,
   ctx: EditorContext,
 ): number {
+  return amountForEnd(layoutTable(kind, ctx), endSeconds);
+}
+
+/**
+ * Every amount of a run type with its layout, built once: a session's
+ * layout needs a full `buildSession`, far too slow to repeat for each
+ * amount on every move of a drag.
+ */
+export type LayoutTable = {
+  amounts: number[];
+  layouts: Layout[];
+  /** Where each amount's main block ends, in seconds from the start. */
+  ends: number[];
+};
+
+export function layoutTable(kind: EditorKind, ctx: EditorContext): LayoutTable {
   const { min, max, step } = amountLimits(kind, ctx);
-  let best = min;
-  let bestDistance = Infinity;
+  const table: LayoutTable = { amounts: [], layouts: [], ends: [] };
   for (let amount = min; amount <= max; amount += step) {
     const layout = layoutFor(kind, amount, ctx);
-    const gap = Math.abs(layout.warmSeconds + layout.mainSeconds - endSeconds);
+    table.amounts.push(amount);
+    table.layouts.push(layout);
+    table.ends.push(layout.warmSeconds + layout.mainSeconds);
+  }
+  return table;
+}
+
+/** Index in `table` of the amount whose main block ends closest to `endSeconds`. */
+export function indexForEnd(table: LayoutTable, endSeconds: number): number {
+  let best = 0;
+  let bestDistance = Infinity;
+  table.ends.forEach((end, index) => {
+    const gap = Math.abs(end - endSeconds);
     if (gap < bestDistance) {
-      best = amount;
+      best = index;
       bestDistance = gap;
     }
-  }
+  });
   return best;
+}
+
+/** The amount whose main block ends closest to `endSeconds`, from a table. */
+export function amountForEnd(table: LayoutTable, endSeconds: number): number {
+  return table.amounts[indexForEnd(table, endSeconds)];
 }
 
 /** A sensible starting amount when the user switches to a type. */

@@ -10,11 +10,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 import {
-  amountForMainEnd,
   amountLimits,
   clampAmount,
-  domainSeconds,
+  indexForEnd,
   layoutFor,
+  layoutTable,
   type EditorContext,
   type EditorKind,
   type Layout,
@@ -76,9 +76,13 @@ function segmentLabel(name: string, seconds: number, px: number) {
  * drawn to one fixed scale per run type. Drag the handle on the right
  * edge of the main block to stretch or shrink the run; it snaps step by
  * step with a haptic tick, a bubble above shows the live value, and the
- * limits give like a soft spring.
+ * limits give like a soft spring. While dragging, the handle follows the
+ * finger exactly and the bar snaps under it; every number comes from a
+ * table built once per run type, so a move never rebuilds a session.
  */
-export default function DurationBar({
+export default React.memo(DurationBar);
+
+function DurationBar({
   kind,
   ctx,
   amount,
@@ -90,8 +94,14 @@ export default function DurationBar({
   const [trackWidth, setTrackWidth] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const layout = useMemo(() => layoutFor(kind, amount, ctx), [kind, amount, ctx]);
-  const domain = useMemo(() => domainSeconds(kind, ctx), [kind, ctx]);
+  // Every amount's layout, built once per type: the drag only reads it.
+  const table = useMemo(() => layoutTable(kind, ctx), [kind, ctx]);
+  const layout = useMemo(() => {
+    const index = table.amounts.indexOf(amount);
+    return index >= 0 ? table.layouts[index] : layoutFor(kind, amount, ctx);
+  }, [table, kind, amount, ctx]);
+  // Longest total run of the type: the bar's scale.
+  const domain = table.layouts[table.layouts.length - 1]?.totalSeconds ?? 1;
   const pxPerSecond = trackWidth > 0 ? trackWidth / domain : 0;
 
   const warmPx = useRef(new Animated.Value(0)).current;
@@ -109,7 +119,8 @@ export default function DurationBar({
       [mainPx, layout.mainSeconds * pxPerSecond],
       [coolPx, layout.coolSeconds * pxPerSecond],
     ];
-    if (!measuredRef.current || reduceMotion) {
+    // Mid-drag the move handler already placed them: no spring to chase.
+    if (!measuredRef.current || reduceMotion || dragRef.current.active) {
       measuredRef.current = true;
       targets.forEach(([value, target]) => value.setValue(target));
       return;
@@ -128,7 +139,7 @@ export default function DurationBar({
   // Everything the drag handlers read, kept fresh without rebuilding them.
   const latest = useRef({
     kind,
-    ctx,
+    table,
     amount,
     layout,
     pxPerSecond,
@@ -138,7 +149,7 @@ export default function DurationBar({
   });
   latest.current = {
     kind,
-    ctx,
+    table,
     amount,
     layout,
     pxPerSecond,
@@ -154,10 +165,11 @@ export default function DurationBar({
     atLimit: false,
   });
 
-  const mainEndPx = (forKind: EditorKind, forAmount: number) => {
-    const { ctx: c, pxPerSecond: scale } = latest.current;
-    const l = layoutFor(forKind, forAmount, c);
-    return (l.warmSeconds + l.mainSeconds) * scale;
+  // Where the main block of the current amount ends, in points.
+  const currentEndPx = () => {
+    const { table: t, amount: a, layout: l, pxPerSecond: scale } = latest.current;
+    const index = t.amounts.indexOf(a);
+    return (index >= 0 ? t.ends[index] : l.warmSeconds + l.mainSeconds) * scale;
   };
 
   // The type changed while the handle is held (e.g. a keyboard or
@@ -165,7 +177,8 @@ export default function DurationBar({
   useEffect(() => {
     const drag = dragRef.current;
     if (!drag.active) return;
-    drag.baseX = (layout.warmSeconds + layout.mainSeconds) * pxPerSecond - drag.dx;
+    drag.baseX = currentEndPx() - drag.dx;
+    overshoot.setValue(0);
     drag.amount = amount;
     drag.atLimit = false;
     // Only a type change rebases the drag.
@@ -180,11 +193,15 @@ export default function DurationBar({
         // Nothing may steal the handle mid-drag, not even a scroll view.
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
-          const { kind: k, amount: a, onDraggingChange: notify } = latest.current;
-          overshoot.stopAnimation();
+          const { amount: a, onDraggingChange: notify } = latest.current;
+          // Starts where the handle is drawn, even mid-glide back.
+          let base = currentEndPx();
+          overshoot.stopAnimation((value) => {
+            base += value;
+          });
           dragRef.current = {
             active: true,
-            baseX: mainEndPx(k, a),
+            baseX: base,
             dx: 0,
             amount: a,
             atLimit: false,
@@ -201,21 +218,28 @@ export default function DurationBar({
           const drag = dragRef.current;
           if (!drag.active) return;
           drag.dx = g.dx;
-          const { kind: k, ctx: c, pxPerSecond: scale } = latest.current;
-          if (scale <= 0) return;
+          const { table: t, pxPerSecond: scale } = latest.current;
+          if (scale <= 0 || t.amounts.length === 0) return;
 
           const x = drag.baseX + g.dx;
-          const next = amountForMainEnd(k, x / scale, c);
+          const index = indexForEnd(t, x / scale);
+          const next = t.amounts[index];
           if (next !== drag.amount) {
             drag.amount = next;
+            // The bar snaps under the finger right away, without waiting
+            // for the parent to re-render.
+            const l = t.layouts[index];
+            warmPx.setValue(l.warmSeconds * scale);
+            mainPx.setValue(l.mainSeconds * scale);
+            coolPx.setValue(l.coolSeconds * scale);
             selectionTick();
             latest.current.onAmountChange(next);
           }
 
-          // Past the shortest or longest run the handle gives a little.
-          const limits = amountLimits(k, c);
-          const minX = mainEndPx(k, limits.min);
-          const maxX = mainEndPx(k, limits.max);
+          // The handle stays under the finger; past the shortest or
+          // longest run it gives only a little.
+          const minX = t.ends[0] * scale;
+          const maxX = t.ends[t.ends.length - 1] * scale;
           const past = x > maxX ? x - maxX : x < minX ? x - minX : 0;
           const give = Math.max(
             -MAX_OVERSHOOT,
@@ -223,7 +247,8 @@ export default function DurationBar({
           );
           if (past !== 0 && !drag.atLimit) lightImpact();
           drag.atLimit = past !== 0;
-          overshoot.setValue(give);
+          const shownX = x - past + give;
+          overshoot.setValue(shownX - t.ends[index] * scale);
         },
         onPanResponderRelease: () => endDrag(),
         onPanResponderTerminate: () => endDrag(),
@@ -267,23 +292,30 @@ export default function DurationBar({
   const handleLayout = (event: LayoutChangeEvent) =>
     setTrackWidth(event.nativeEvent.layout.width);
 
-  // Handle and bubble ride the end of the main block, plus the give.
-  const handleCenter = Animated.add(Animated.add(warmPx, mainPx), overshoot);
-  const handleLeft = Animated.subtract(handleCenter, HANDLE_WIDTH / 2);
-  const bubbleRange =
-    trackWidth > BUBBLE_WIDTH
-      ? [BUBBLE_WIDTH / 2, trackWidth - BUBBLE_WIDTH / 2]
-      : [0, 1];
-  const bubbleLeft = handleCenter.interpolate({
-    inputRange: bubbleRange,
-    outputRange: [0, Math.max(0, trackWidth - BUBBLE_WIDTH)],
-    extrapolate: 'clamp',
-  });
-  // The tail keeps pointing at the handle when the bubble is held inside
-  // the track near either end.
-  const tailX = Animated.subtract(
-    handleCenter,
-    Animated.add(bubbleLeft, BUBBLE_WIDTH / 2),
+  // Handle and bubble ride the end of the main block, plus the offset to
+  // the finger. Built once per width, not on every render.
+  const { handleLeft, bubbleLeft, tailX } = useMemo(() => {
+    const center = Animated.add(Animated.add(warmPx, mainPx), overshoot);
+    const range =
+      trackWidth > BUBBLE_WIDTH
+        ? [BUBBLE_WIDTH / 2, trackWidth - BUBBLE_WIDTH / 2]
+        : [0, 1];
+    const left = center.interpolate({
+      inputRange: range,
+      outputRange: [0, Math.max(0, trackWidth - BUBBLE_WIDTH)],
+      extrapolate: 'clamp',
+    });
+    return {
+      handleLeft: Animated.subtract(center, HANDLE_WIDTH / 2),
+      bubbleLeft: left,
+      // The tail keeps pointing at the handle when the bubble is held
+      // inside the track near either end.
+      tailX: Animated.subtract(center, Animated.add(left, BUBBLE_WIDTH / 2)),
+    };
+  }, [trackWidth, warmPx, mainPx, overshoot]);
+  const bubbleScale = useMemo(
+    () => bubble.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }),
+    [bubble],
   );
 
   const isReps = layout.reps !== undefined;
@@ -309,7 +341,7 @@ export default function DurationBar({
               opacity: bubble,
               transform: [
                 { translateX: bubbleLeft },
-                { scale: bubble.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) },
+                { scale: bubbleScale },
               ],
             },
           ]}
@@ -521,7 +553,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SEGMENT_GAP,
     marginTop: spacing.xxs,
-    minHeight: 32,
+    // Two caption lines ("Main" over "120 min").
+    minHeight: 36,
   },
   labelBox: {
     alignItems: 'center',
