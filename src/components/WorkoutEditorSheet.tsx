@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Pressable,
@@ -48,6 +48,8 @@ import { formatKm, formatMinutes, WORKOUT_TYPE_COLORS } from './WorkoutCard';
 // padding take, so the content height fills the rest of the screen.
 const SHEET_TOP_GAP = spacing.sm;
 const SHEET_CHROME = 64;
+// Below this window height the content would not fit above the summary.
+const COMPACT_WINDOW_HEIGHT = 760;
 
 type Props = {
   /** The workout being edited; kept while the sheet animates out. */
@@ -154,23 +156,40 @@ function EditorContent({
   const [dragging, setDragging] = useState(false);
   const submittedRef = useRef(false);
 
-  const selectKind = (kind: EditorKind) => {
-    if (kind === draft.kind) return;
-    setDraft({
-      kind,
-      amount: memory.current[kind] ?? defaultDraft(kind, ctx).amount,
-    });
-  };
-
-  const setAmount = (amount: number) => {
-    memory.current[draft.kind] = amount;
-    setDraft({ kind: draft.kind, amount });
-  };
-
-  const stats = useMemo(
-    () => draftStats(workout.id, draft, ctx),
-    [workout.id, draft, ctx],
+  // Stable callbacks, so the carousel and the bar skip re-rendering when
+  // only the other one changed.
+  const selectKind = useCallback(
+    (kind: EditorKind) =>
+      setDraft((current) =>
+        kind === current.kind
+          ? current
+          : {
+              kind,
+              amount: memory.current[kind] ?? defaultDraft(kind, ctx).amount,
+            },
+      ),
+    [ctx],
   );
+
+  const setAmount = useCallback((amount: number) => {
+    setDraft((current) => {
+      memory.current[current.kind] = amount;
+      return current.amount === amount ? current : { kind: current.kind, amount };
+    });
+  }, []);
+
+  // Each draft's numbers are built once: dragging back and forth over the
+  // same minutes only reads them.
+  const statsCache = useRef(new Map<string, ReturnType<typeof draftStats>>());
+  const stats = useMemo(() => {
+    const key = `${draft.kind}:${draft.amount}`;
+    let cached = statsCache.current.get(key);
+    if (!cached) {
+      cached = draftStats(workout.id, draft, ctx);
+      statsCache.current.set(key, cached);
+    }
+    return cached;
+  }, [workout.id, draft, ctx]);
   const message = editorMessage(
     draft.kind,
     amountFraction(draft.kind, draft.amount, ctx),
@@ -178,6 +197,18 @@ function EditorContent({
   const showHint = nextToHardSession(plan, workout.date, draft.kind);
   const unchanged = sameDraft(draft, initial);
   const color = colorFor(draft.kind);
+
+  // Short screens (iPhone SE, 8): Mike's line goes below the bar, so the
+  // bar and its labels fit without scrolling (scroll is locked mid-drag).
+  const compact = windowHeight < COMPACT_WINDOW_HEIGHT;
+  const mikeLine = (
+    <MikeLine
+      key={draft.kind}
+      message={message}
+      alternatives={editorMessages[draft.kind]}
+      reduceMotion={reduceMotion}
+    />
+  );
 
   const handleSave = () => {
     if (unchanged || submittedRef.current) return;
@@ -233,12 +264,7 @@ function EditorContent({
           reduceMotion={reduceMotion}
         />
 
-        <MikeLine
-          key={draft.kind}
-          message={message}
-          alternatives={editorMessages[draft.kind]}
-          reduceMotion={reduceMotion}
-        />
+        {!compact && mikeLine}
 
         <DurationBar
           kind={draft.kind}
@@ -249,6 +275,8 @@ function EditorContent({
           onDraggingChange={setDragging}
           reduceMotion={reduceMotion}
         />
+
+        {compact && mikeLine}
 
         {showHint && <Hint reduceMotion={reduceMotion} />}
       </ScrollView>
@@ -261,7 +289,8 @@ function EditorContent({
           pace={stats.pace}
           fastPace={draft.kind === 'intervals'}
           topZone={stats.topZone}
-          reduceMotion={reduceMotion}
+          // Numbers glide only at rest: mid-drag they follow each step.
+          reduceMotion={reduceMotion || dragging}
         />
       </View>
 
@@ -290,14 +319,18 @@ type MikeLineProps = {
  * tallest line it can show, so a longer line never pushes the duration bar
  * down while it is being dragged.
  */
-function MikeLine({ message, alternatives, reduceMotion }: MikeLineProps) {
+const MikeLine = React.memo(function MikeLine({
+  message,
+  alternatives,
+  reduceMotion,
+}: MikeLineProps) {
   const [minHeight, setMinHeight] = useState(0);
-  const measured = useRef<number[]>([]);
 
-  const handleMeasure = (index: number, height: number) => {
-    measured.current[index] = height;
-    setMinHeight(Math.max(...measured.current.filter((h) => h !== undefined)));
-  };
+  // Only a taller line raises the reserved height: one update per copy at
+  // most, when the run type's lines first lay out.
+  const handleMeasure = useCallback((height: number) => {
+    setMinHeight((current) => (height > current ? height : current));
+  }, []);
 
   return (
     <View style={styles.mikeRow}>
@@ -310,30 +343,46 @@ function MikeLine({ message, alternatives, reduceMotion }: MikeLineProps) {
           sender="mike"
           reduceMotion={reduceMotion}
         />
-        {/* Invisible copies of every line, only to measure the tallest. */}
-        {alternatives.map((text, index) => (
-          <View
-            key={text}
-            pointerEvents="none"
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            style={styles.mikeMeasure}
-            onLayout={(event) =>
-              handleMeasure(index, event.nativeEvent.layout.height)
-            }
-          >
-            <ChatBubble
-              text={text}
-              sender="mike"
-              animateOnMount={false}
-              reduceMotion
-            />
-          </View>
-        ))}
+        <MeasureCopies lines={alternatives} onMeasure={handleMeasure} />
       </View>
     </View>
   );
-}
+});
+
+/**
+ * Invisible copies of every line, only to measure the tallest. Memoized
+ * on the lines, so they render once per run type and never while the
+ * current line changes.
+ */
+const MeasureCopies = React.memo(function MeasureCopies({
+  lines,
+  onMeasure,
+}: {
+  lines: readonly string[];
+  onMeasure: (height: number) => void;
+}) {
+  return (
+    <>
+      {lines.map((text) => (
+        <View
+          key={text}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.mikeMeasure}
+          onLayout={(event) => onMeasure(event.nativeEvent.layout.height)}
+        >
+          <ChatBubble
+            text={text}
+            sender="mike"
+            animateOnMount={false}
+            reduceMotion
+          />
+        </View>
+      ))}
+    </>
+  );
+});
 
 type SummaryProps = {
   seconds: number;
@@ -345,8 +394,18 @@ type SummaryProps = {
   reduceMotion: boolean;
 };
 
-/** Total time, distance and pace: big numbers that glide as you drag. */
-function Summary({ seconds, meters, pace, fastPace, topZone, reduceMotion }: SummaryProps) {
+/**
+ * Total time, distance and pace (or top zone) in one compact row, so the
+ * pinned block leaves the bar and its labels room. Numbers glide at rest.
+ */
+const Summary = React.memo(function Summary({
+  seconds,
+  meters,
+  pace,
+  fastPace,
+  topZone,
+  reduceMotion,
+}: SummaryProps) {
   const time = useAnimatedNumber(seconds, reduceMotion);
   const km = useAnimatedNumber(meters, reduceMotion);
   const paceMin = useAnimatedNumber(
@@ -377,35 +436,33 @@ function Summary({ seconds, meters, pace, fastPace, topZone, reduceMotion }: Sum
         topZone !== null ? `top zone ${topZone}` : `pace ${paceText} per kilometer`
       }`}
     >
-      <View>
-        <Text style={[typography.subheadline, styles.summaryLabel]}>
-          Total time
-        </Text>
-        <Text style={[typography.metricBig, styles.summaryTime]}>
+      <View style={styles.summaryItem}>
+        <Text style={[typography.largeTitle, styles.summaryValue]}>
           {timeText}
         </Text>
+        <Text style={[typography.caption, styles.summaryLabel]}>
+          total time
+        </Text>
       </View>
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryItem}>
-          <Text style={[typography.title2, styles.summaryValue]}>
-            {distanceText}
-          </Text>
-          <Text style={[typography.subheadline, styles.summaryLabel]}>
-            est. distance
-          </Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[typography.title2, styles.summaryValue]}>
-            {paceText}
-          </Text>
-          <Text style={[typography.subheadline, styles.summaryLabel]}>
-            {topZone !== null ? 'top zone' : fastPace ? 'fast pace /km' : 'pace /km'}
-          </Text>
-        </View>
+      <View style={styles.summaryItem}>
+        <Text style={[typography.title2, styles.summaryValue]}>
+          {distanceText}
+        </Text>
+        <Text style={[typography.caption, styles.summaryLabel]}>
+          est. distance
+        </Text>
+      </View>
+      <View style={styles.summaryItem}>
+        <Text style={[typography.title2, styles.summaryValue]}>
+          {paceText}
+        </Text>
+        <Text style={[typography.caption, styles.summaryLabel]}>
+          {topZone !== null ? 'top zone' : fastPace ? 'fast pace /km' : 'pace /km'}
+        </Text>
       </View>
     </View>
   );
-}
+});
 
 /** The soft warning about two hard sessions in a row. */
 function Hint({ reduceMotion }: { reduceMotion: boolean }) {
@@ -449,7 +506,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: spacing.md,
-    paddingBottom: spacing.md,
+    // The bar's labels sit last: room so they never touch the edge.
+    paddingBottom: spacing.xl,
   },
   mikeRow: {
     flexDirection: 'row',
@@ -470,20 +528,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   summary: {
-    gap: spacing.sm,
-  },
-  summaryRow: {
     flexDirection: 'row',
-    gap: spacing.xl,
+    alignItems: 'flex-end',
+    gap: spacing.lg,
   },
   summaryItem: {
     gap: 0,
   },
   summaryLabel: {
     color: colors.textSecondary,
-  },
-  summaryTime: {
-    color: colors.textPrimary,
   },
   summaryValue: {
     color: colors.textPrimary,
