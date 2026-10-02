@@ -38,17 +38,18 @@ export type SessionSpec = {
 };
 
 export const SESSION_SPECS: Record<SessionId, SessionSpec> = {
-  regenerative: { category: 'easy', speedWork: false, advanced: false, minMinutes: 20, maxMinutes: 60 },
-  extensiveAerobic: { category: 'aerobic', speedWork: false, advanced: false, minMinutes: 30, maxMinutes: 75 },
-  progressive: { category: 'aerobic', speedWork: false, advanced: false, minMinutes: 30, maxMinutes: 80 },
-  tempoRun: { category: 'tempo', speedWork: true, advanced: true, minMinutes: 30, maxMinutes: 70 },
-  strides: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 20, maxMinutes: 45 },
-  fartlek: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 35, maxMinutes: 55 },
-  longIntervals: { category: 'intervals', speedWork: true, advanced: true, minMinutes: 55, maxMinutes: 80 },
-  mixedIntervals: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 25, maxMinutes: 50 },
-  hiit: { category: 'speed', speedWork: true, advanced: true, minMinutes: 22, maxMinutes: 45 },
-  hiitMacro: { category: 'speed', speedWork: true, advanced: true, minMinutes: 27, maxMinutes: 50 },
-  sprints: { category: 'speed', speedWork: true, advanced: true, minMinutes: 33, maxMinutes: 70 },
+  // Maximums leave room for the strong levels' bigger sessions.
+  regenerative: { category: 'easy', speedWork: false, advanced: false, minMinutes: 20, maxMinutes: 75 },
+  extensiveAerobic: { category: 'aerobic', speedWork: false, advanced: false, minMinutes: 30, maxMinutes: 100 },
+  progressive: { category: 'aerobic', speedWork: false, advanced: false, minMinutes: 30, maxMinutes: 100 },
+  tempoRun: { category: 'tempo', speedWork: true, advanced: true, minMinutes: 30, maxMinutes: 90 },
+  strides: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 20, maxMinutes: 60 },
+  fartlek: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 35, maxMinutes: 75 },
+  longIntervals: { category: 'intervals', speedWork: true, advanced: true, minMinutes: 55, maxMinutes: 95 },
+  mixedIntervals: { category: 'intervals', speedWork: true, advanced: false, minMinutes: 25, maxMinutes: 70 },
+  hiit: { category: 'speed', speedWork: true, advanced: true, minMinutes: 22, maxMinutes: 60 },
+  hiitMacro: { category: 'speed', speedWork: true, advanced: true, minMinutes: 27, maxMinutes: 65 },
+  sprints: { category: 'speed', speedWork: true, advanced: true, minMinutes: 33, maxMinutes: 85 },
 };
 
 export const SESSION_IDS = Object.keys(SESSION_SPECS) as SessionId[];
@@ -314,7 +315,7 @@ export function paceFor(target: StepTarget, zone: Zone | undefined, easyPace: nu
   return zonePace(easyPace, zone);
 }
 
-function maker(workoutId: string, easyPace: number): Make {
+function maker(workoutId: string, easyPace: number, extraReps: number): Make {
   let n = 0;
   const nextId = () => `${workoutId}-${++n}`;
   return {
@@ -325,7 +326,7 @@ function maker(workoutId: string, easyPace: number): Make {
     },
     repeat: (repeat, steps, sets) => ({
       id: nextId(),
-      repeat,
+      repeat: repeat + extraReps,
       steps,
       ...(sets ? { sets: sets.sets, macroRest: sets.macroRest } : {}),
     }),
@@ -339,15 +340,16 @@ const roundFlex = (s: number) => Math.max(FLEX_MIN_S, Math.round(s / FLEX_ROUND_
  * reference session); `totalSeconds`, when given, wins and sets the scale
  * so the whole session lasts about that long. `variant` picks one of the
  * session's variants, wrapping around (any whole number works, e.g. the
- * plan week).
+ * plan week). `extraReps` adds repetitions to each rep block (stronger
+ * runners); sets and rests stay as the session defines them.
  */
 export function buildSession(
   workoutId: string,
   session: SessionId,
   easyPace: number,
-  options: { scale?: number; totalSeconds?: number; variant?: number } = {},
+  options: { scale?: number; totalSeconds?: number; variant?: number; extraReps?: number } = {},
 ): WorkoutSegment[] {
-  const make = maker(workoutId, easyPace);
+  const make = maker(workoutId, easyPace, options.extraReps ?? 0);
   const variants = TEMPLATES[session];
   const parts = variants[Math.max(0, options.variant ?? 0) % variants.length](make);
   const fixed = totalDuration({ segments: parts.filter((p): p is WorkoutSegment => !isFlex(p)) });

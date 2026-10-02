@@ -15,14 +15,18 @@ import {
   DEFAULT_RUN_WALK_REPS,
   distance,
   duration,
+  EASY_MAX_MINUTES,
   generatePlan,
   INTERVALS,
+  INTERVALS_MAX_MINUTES,
   intervalMeters,
+  LONG_MAX_MINUTES,
   paceRange,
   planWeekIndex,
   round5,
   rulesFor,
   runWalkBoutSeconds,
+  sessionExtraReps,
   sessionSegments,
   stepFactory,
   WALK_BREAK_SECONDS,
@@ -92,10 +96,10 @@ const RUN_WALK_FALLBACK_LEVEL: LevelId = 'run_walk';
 
 /** Total time limits in minutes, by type (sessions: see `SESSION_SPECS`). */
 const MINUTES_RANGE: Record<BasicKind, { min: number; max: number }> = {
-  easy: { min: 15, max: 90 },
+  easy: { min: 15, max: EASY_MAX_MINUTES },
   runWalk: { min: 10, max: 60 },
-  long: { min: 40, max: 180 },
-  intervals: { min: 25, max: 75 },
+  long: { min: 40, max: LONG_MAX_MINUTES },
+  intervals: { min: 25, max: INTERVALS_MAX_MINUTES },
 };
 
 /** What the user edits: minutes of a continuous run, or repetitions. */
@@ -312,6 +316,7 @@ function sessionDraftSegments(
   return buildSession(workoutId, session, ctx.rules.easyPace, {
     totalSeconds: amount * 60,
     variant: ctx.week,
+    extraReps: sessionExtraReps(ctx.rules),
   });
 }
 

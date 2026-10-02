@@ -2,6 +2,7 @@ import { addDays, dayNumber, startOfWeek, todayISO, type ISODate } from '../util
 import {
   isDemandingType,
   PLAN_SCHEMA_VERSION,
+  stepDuration,
   totalDistance,
   totalDuration,
   type Pace,
@@ -59,6 +60,24 @@ const DELOAD_RANGE = { min: 0.75, max: 0.85 };
 const FIT_MIN = 0.6;
 const FIT_MAX = 1.6;
 const FIT_STEPS = 100;
+/**
+ * The levels with their own volume start high, so their weeks get more
+ * room to build (same step size).
+ */
+const FIT_MAX_VOLUME = 2.4;
+const FIT_STEPS_VOLUME = 180;
+/**
+ * A strong level's first week is planned so its build weeks reach their
+ * curve within this share of the most they can hold.
+ */
+const BUILD_ROOM = 0.97;
+
+/** Every load a week of this runner can be built at. */
+function fitLoads(rules: Rules): number[] {
+  const max = rules.volume ? FIT_MAX_VOLUME : FIT_MAX;
+  const steps = rules.volume ? FIT_STEPS_VOLUME : FIT_STEPS;
+  return Array.from({ length: steps + 1 }, (_, i) => FIT_MIN + ((max - FIT_MIN) * i) / steps);
+}
 
 const DAY_ORDER: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const DEFAULT_DAYS: DayId[] = ['tue', 'thu', 'sat'];
@@ -99,10 +118,81 @@ const EASY_KM: Record<LevelId, number> = {
   run_30: 4,
   run_5k: 5,
   run_10k_plus: 7,
-  run_half: 7,
-  run_marathon: 7,
-  run_competitive: 7,
+  run_half: 8,
+  run_marathon: 9,
+  run_competitive: 10,
 };
+
+/**
+ * Volume of the strong levels (10K and up). A level without an entry keeps
+ * the original path: its first week is built at load 1 from `EASY_KM`.
+ *
+ * What a four-week block does for these runners: it sets a weekly volume
+ * from their level and goal, builds it and the long run for three weeks
+ * and recovers in the fourth, and each later block starts a bit higher.
+ * What it does not do: peak or taper for a race. There is no race date and
+ * no race-pace work, so a marathon plan here is base building; a real
+ * marathon build is a job for the AI coach.
+ */
+export type LevelVolume = {
+  /** Week-1 training minutes per training day, before the goal factor. */
+  minutesPerDay: number;
+  /** Week-1 long run (km): the floor, and the ceiling for the longest goals. */
+  longFloorKm: number;
+  longCeilingKm: number;
+  /** Repetitions added to each rep block of a structured session. */
+  extraReps: number;
+  /** Classic interval repetitions before the week's adjustment. */
+  intervalReps: number;
+};
+
+const LEVEL_VOLUME: Partial<Record<LevelId, LevelVolume>> = {
+  run_10k_plus: { minutesPerDay: 50, longFloorKm: 10, longCeilingKm: 16, extraReps: 0, intervalReps: 7 },
+  run_half: { minutesPerDay: 60, longFloorKm: 14, longCeilingKm: 20, extraReps: 1, intervalReps: 8 },
+  run_marathon: { minutesPerDay: 70, longFloorKm: 16, longCeilingKm: 24, extraReps: 2, intervalReps: 9 },
+  run_competitive: { minutesPerDay: 75, longFloorKm: 16, longCeilingKm: 26, extraReps: 3, intervalReps: 10 },
+};
+
+/**
+ * By goal, for the levels in `LEVEL_VOLUME`: `week` multiplies the week-1
+ * volume, `long` places the week-1 long run between the level's floor (0)
+ * and ceiling (1).
+ */
+const GOAL_VOLUME: Record<GoalId, { week: number; long: number }> = {
+  first_5k: { week: 0.95, long: 0 },
+  run_5k_nonstop: { week: 0.95, long: 0 },
+  faster_5k: { week: 0.95, long: 0 },
+  first_10k: { week: 1, long: 0.25 },
+  faster_10k: { week: 1, long: 0.25 },
+  first_half: { week: 1.1, long: 0.6 },
+  faster_half: { week: 1.1, long: 0.6 },
+  marathon: { week: 1.15, long: 1 },
+  trail: { week: 1.05, long: 0.4 },
+  endurance: { week: 1.05, long: 0.4 },
+  lose_weight: { week: 0.9, long: 0 },
+  build_habit: { week: 0.9, long: 0 },
+  return_after_break: { week: 0.9, long: 0 },
+  stay_active: { week: 0.9, long: 0 },
+  not_sure: { week: 0.9, long: 0 },
+};
+
+/** The longest long run, in km and in minutes (the workout editor's limit). */
+const MAX_LONG_KM = 32;
+export const LONG_MAX_MINUTES = 180;
+/** The longest easy run (the workout editor's limit). */
+export const EASY_MAX_MINUTES = 120;
+/** The longest classic interval session (the workout editor's limit). */
+export const INTERVALS_MAX_MINUTES = 75;
+/** A classic interval session's fixed parts. */
+const INTERVAL_WARMUP_MINUTES = 10;
+const INTERVAL_COOLDOWN_MINUTES = 5;
+const INTERVAL_RECOVERY_SECONDS = 90;
+
+/** The week-1 long run (km): between the level's floor and ceiling, by goal. */
+function longRunKm(volume: LevelVolume, goal: GoalId) {
+  const { longFloorKm, longCeilingKm } = volume;
+  return longFloorKm + (longCeilingKm - longFloorKm) * GOAL_VOLUME[goal].long;
+}
 
 type GoalFocus = '5k' | '10k' | 'distance' | 'general';
 
@@ -149,6 +239,7 @@ const INTERVAL_REPS_BY_WEEK = [0, 1, 2, -1];
 
 export type Rules = {
   level: LevelId;
+  goal: GoalId;
   focus: GoalFocus;
   beginner: boolean;
   /** An injury hurts now: easy sessions only, shorter. */
@@ -160,22 +251,34 @@ export type Rules = {
   /** The advanced sessions may appear (from the 5K level up). */
   advanced: boolean;
   easyPace: number;
+  /** The level's volume (10K and up, no pain); otherwise the original path. */
+  volume?: LevelVolume;
 };
 
 export function rulesFor(profile: RunnerProfile): Rules {
   const level = knownLevel(profile.level) ?? 'not_running';
   const beginner = isBeginnerLevel(level);
   const gentle = profile.injuryStatus === 'hurts_now';
+  // A goal id this version doesn't know counts as no goal.
+  const goal = profile.goal !== undefined && profile.goal in GOAL_FOCUS ? profile.goal : 'not_sure';
+  const volume = beginner || gentle ? undefined : LEVEL_VOLUME[level];
   return {
     level,
-    focus: GOAL_FOCUS[profile.goal ?? 'not_sure'],
+    goal,
+    focus: GOAL_FOCUS[goal],
     beginner,
     gentle,
     intervals: profile.includeIntervals === true && !beginner && !gentle,
     structured: !beginner && !gentle,
     advanced: !beginner && isAdvancedLevel(level),
     easyPace: EASY_PACE[level],
+    ...(volume ? { volume } : {}),
   };
+}
+
+/** Repetitions added to each rep block of a session for this runner. */
+export function sessionExtraReps(rules: Rules) {
+  return rules.volume?.extraReps ?? 0;
 }
 
 /** Week of its block (0-3); week 3 is the lighter one. */
@@ -368,13 +471,23 @@ const SESSION_LEVEL_SCALE: Record<LevelId, number> = {
   run_30: 0.85,
   run_5k: 1,
   run_10k_plus: 1.15,
-  run_half: 1.15,
-  run_marathon: 1.15,
-  run_competitive: 1.15,
+  run_half: 1.3,
+  run_marathon: 1.4,
+  run_competitive: 1.5,
 };
 
 /** A regenerative run is a bit shorter than the week's easy run. */
 const REGENERATIVE_SHARE = 0.85;
+
+/**
+ * A session's total kept within its editor limits (`SESSION_SPECS`), for
+ * the levels with a volume, so every generated session can be edited as is.
+ */
+function withinSpec(rules: Rules, session: SessionId, totalSeconds: number) {
+  if (!rules.volume) return totalSeconds;
+  const spec = SESSION_SPECS[session];
+  return Math.min(minutes(spec.maxMinutes), Math.max(minutes(spec.minMinutes), totalSeconds));
+}
 
 /**
  * A generated session at load `s` (1 = the plan's first week; by default
@@ -393,13 +506,24 @@ export function sessionSegments(
   if (session === 'regenerative') {
     const easy = totalDuration({ segments: buildSegments(workoutId, 'easy', rules, week, s) });
     return buildSession(workoutId, session, rules.easyPace, {
-      totalSeconds: Math.max(minutes(SESSION_SPECS.regenerative.minMinutes), easy * REGENERATIVE_SHARE),
+      totalSeconds: withinSpec(
+        rules,
+        session,
+        Math.max(minutes(SESSION_SPECS.regenerative.minMinutes), easy * REGENERATIVE_SHARE),
+      ),
     });
   }
-  return buildSession(workoutId, session, rules.easyPace, {
+  const options = {
     scale: SESSION_LEVEL_SCALE[rules.level] * s,
     variant: week,
-  });
+    extraReps: sessionExtraReps(rules),
+  };
+  const built = buildSession(workoutId, session, rules.easyPace, options);
+  const total = totalDuration({ segments: built });
+  const allowed = withinSpec(rules, session, total);
+  return allowed === total
+    ? built
+    : buildSession(workoutId, session, rules.easyPace, { ...options, totalSeconds: allowed });
 }
 
 export const round5 = (n: number) => Math.round(n / 5) * 5;
@@ -453,7 +577,7 @@ export function intervalMeters(focus: GoalFocus, week: number) {
  * the reps are the longer ones.
  */
 export function defaultIntervalReps(level: LevelId, week: number) {
-  const base = level === 'run_5k' ? 6 : isAdvancedLevel(level) ? 7 : 5;
+  const base = LEVEL_VOLUME[level]?.intervalReps ?? (level === 'run_5k' ? 6 : 5);
   const reps = base + INTERVAL_REPS_BY_WEEK[cycleWeek(week)];
   return week % 2 === 0 ? reps : Math.max(3, Math.round(reps * LONG_REP_SHARE));
 }
@@ -506,14 +630,21 @@ export function buildSegments(
   if (type === 'intervals') {
     const { fasterBy } = INTERVALS[rules.focus];
     const fastPace = round5(rules.easyPace - fasterBy);
-    const reps = defaultIntervalReps(rules.level, week);
+    const meters = intervalMeters(rules.focus, week);
+    let reps = defaultIntervalReps(rules.level, week);
+    if (rules.volume) {
+      // Within the editor's limit: warm-up, cool-down and every rep with its rest.
+      const cycle = Math.round((meters / 1000) * fastPace) + INTERVAL_RECOVERY_SECONDS;
+      const room = minutes(INTERVALS_MAX_MINUTES) - minutes(INTERVAL_WARMUP_MINUTES + INTERVAL_COOLDOWN_MINUTES);
+      reps = Math.min(reps, Math.floor(room / cycle));
+    }
     return [
-      step('warmup', duration(minutes(10)), warm),
+      step('warmup', duration(minutes(INTERVAL_WARMUP_MINUTES)), warm),
       repeat(reps, [
-        step('work', distance(intervalMeters(rules.focus, week) / 1000), fastPace),
-        step('recovery', duration(90), null),
+        step('work', distance(meters / 1000), fastPace),
+        step('recovery', duration(INTERVAL_RECOVERY_SECONDS), null),
       ]),
-      step('cooldown', duration(minutes(5)), warm),
+      step('cooldown', duration(minutes(INTERVAL_COOLDOWN_MINUTES)), warm),
     ];
   }
 
@@ -541,11 +672,27 @@ export function buildSegments(
 
   if (type === 'long') {
     const longLoad = LONG_CURVE[cycleWeek(week)] * blockGrowth(week);
-    const km = roundHalfKm(EASY_KM[rules.level] * LONG_RUN_FACTOR[rules.focus] * longLoad);
-    return [step('steady', distance(km), paceRange(rules.easyPace, 0, 30))];
+    const longPace = paceRange(rules.easyPace, 0, 30);
+    if (!rules.volume) {
+      const km = roundHalfKm(EASY_KM[rules.level] * LONG_RUN_FACTOR[rules.focus] * longLoad);
+      return [step('steady', distance(km), longPace)];
+    }
+    let km = Math.min(MAX_LONG_KM, roundHalfKm(longRunKm(rules.volume, rules.goal) * longLoad));
+    // Within the editor's limit for long runs.
+    const seconds = (n: number) =>
+      stepDuration({ id: '', kind: 'steady', target: distance(n), pace: longPace });
+    while (seconds(km) > minutes(LONG_MAX_MINUTES)) km -= 0.5;
+    return [step('steady', distance(km), longPace)];
   }
 
-  return [step('steady', distance(roundHalfKm(EASY_KM[rules.level] * s)), easy)];
+  let km = roundHalfKm(EASY_KM[rules.level] * s);
+  if (rules.volume) {
+    // Within the editor's limit for easy runs.
+    const seconds = (n: number) =>
+      stepDuration({ id: '', kind: 'steady', target: distance(n), pace: easy });
+    while (km > 1 && seconds(km) > minutes(EASY_MAX_MINUTES)) km -= 0.5;
+  }
+  return [step('steady', distance(km), easy)];
 }
 
 type GeneratorContext = {
@@ -622,13 +769,41 @@ function fitWeek(
   const target = first.seconds * weekLoad(week);
   let best: BuiltWeek | undefined;
   let bestScore = Infinity;
-  for (let i = 0; i <= FIT_STEPS; i += 1) {
-    const s = FIT_MIN + ((FIT_MAX - FIT_MIN) * i) / FIT_STEPS;
+  for (const s of fitLoads(ctx.rules)) {
     const built = buildWeekAt(ctx, week, s);
     const score =
       boundsMiss(built, previous, week) * 1e9 +
       Math.abs(built.seconds - target) +
       Math.abs(s - 1) * 1e-3;
+    if (score < bestScore) {
+      best = built;
+      bestScore = score;
+    }
+  }
+  return best!;
+}
+
+/**
+ * The first week built at the load whose total time is closest to the
+ * level's week-1 volume: minutes per training day × days × the goal's
+ * factor. Same grid and tie rule as `fitWeek`.
+ */
+function fitFirstWeek(ctx: GeneratorContext, volume: LevelVolume): BuiltWeek {
+  const wanted =
+    minutes(volume.minutesPerDay) * ctx.days.length * GOAL_VOLUME[ctx.rules.goal].week;
+  // Sessions stop at their editor limits, so a week can only hold so much:
+  // leave the block's build weeks room to grow.
+  const loads = fitLoads(ctx.rules);
+  const top = loads[loads.length - 1];
+  const room = Math.min(
+    ...[1, 2].map((week) => (buildWeekAt(ctx, week, top).seconds * BUILD_ROOM) / WEEK_CURVE[week]),
+  );
+  const target = Math.min(wanted, room);
+  let best: BuiltWeek | undefined;
+  let bestScore = Infinity;
+  for (const s of fitLoads(ctx.rules)) {
+    const built = buildWeekAt(ctx, 0, s);
+    const score = Math.abs(built.seconds - target) + Math.abs(s - 1) * 1e-3;
     if (score < bestScore) {
       best = built;
       bestScore = score;
@@ -644,8 +819,9 @@ function fitWeek(
  * with the whole plan.
  */
 function fittedWeeks(ctx: GeneratorContext, weeks: number[]): Map<number, BuiltWeek> {
-  // The plan's first week at its natural load sets the volume.
-  const first = buildWeekAt(ctx, 0, 1);
+  // The plan's first week sets the volume: the level's own volume when it
+  // has one, otherwise the week at its natural load.
+  const first = ctx.rules.volume ? fitFirstWeek(ctx, ctx.rules.volume) : buildWeekAt(ctx, 0, 1);
   const cache = new Map<number, BuiltWeek>();
   const fitted = (week: number): BuiltWeek => {
     const cached = cache.get(week);
