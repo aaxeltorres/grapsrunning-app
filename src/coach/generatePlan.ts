@@ -17,6 +17,7 @@ import {
 import { buildSession, isAdvancedLevel, SESSION_SPECS } from './sessions';
 import {
   isBeginnerLevel,
+  planAnswersSnapshot,
   planLengthOf,
   type DayId,
   type GoalId,
@@ -689,6 +690,7 @@ export function buildMockPlan(
     startDate,
     weeks,
     length,
+    basedOn: planAnswersSnapshot(profile),
     workouts: weekWorkouts(profile, startDate, range(weeks), today),
   };
 }
@@ -764,19 +766,10 @@ export async function extendPlan(
   return {
     ...plan,
     weeks: week + 1,
+    basedOn: planAnswersSnapshot(profile),
+    keptAnswers: undefined,
     workouts: [...plan.workouts, ...added].sort((a, b) => a.date.localeCompare(b.date)),
   };
-}
-
-/**
- * A workout the user can still change: ahead of us, planned, never edited.
- * Only `planned` qualifies, so completed and partial workouts (and their
- * stored results) are never touched.
- */
-function isRegeneratable(workout: Workout, today: ISODate) {
-  return (
-    workout.date >= today && workout.status === 'planned' && !workout.edited
-  );
 }
 
 /**
@@ -811,38 +804,6 @@ export async function createNewPlan(
 
   return {
     ...fresh,
-    workouts: [...kept, ...added].sort((a, b) => a.date.localeCompare(b.date)),
-  };
-}
-
-/**
- * Rebuilds the plan after the runner's answers changed. Only the workouts
- * that are still ahead, planned and not edited are replaced: past days,
- * completed, skipped and edited workouts stay exactly as they are. The
- * plan keeps its id, start date and weeks (a monthly plan has at least
- * four) and takes the runner's plan length; the new workouts follow the
- * same week-by-week progression as the original.
- */
-export async function regeneratePlan(
-  plan: Plan,
-  profile: RunnerProfile,
-  today: ISODate = todayISO(),
-): Promise<Plan> {
-  const length = planLengthOf(profile);
-  const weeks =
-    length === 'monthly' ? Math.max(plan.weeks, MONTHLY_WEEKS) : plan.weeks;
-  // Generated from the plan's own start, so week 1 stays week 1.
-  const fresh = await generatePlan(profile, plan.startDate, { weeks });
-  const kept = plan.workouts.filter((w) => !isRegeneratable(w, today));
-  const taken = new Set(kept.map((w) => w.date));
-  const added = fresh.workouts.filter(
-    (w) => w.date >= today && !taken.has(w.date),
-  );
-
-  return {
-    ...plan,
-    weeks,
-    length,
     workouts: [...kept, ...added].sort((a, b) => a.date.localeCompare(b.date)),
   };
 }

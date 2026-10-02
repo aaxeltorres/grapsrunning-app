@@ -110,30 +110,45 @@ export function withDerivedFields(profile: RunnerProfile): RunnerProfile {
   return { ...profile, includeIntervals: profile.speedWork === 'yes' };
 }
 
-/** Answers the training plan is built from; the rest only describe the runner. */
-const PLAN_ANSWER_IDS = [
-  'goal',
-  'level',
-  'speedWork',
-  'availableDays',
-  'planLength',
-  'injuries',
-  'injuryStatus',
-] as const satisfies readonly QuestionId[];
-
 /** The plan length; missing (profiles from before the question) means monthly. */
 export function planLengthOf(profile: RunnerProfile): PlanLengthId {
   return profile.planLength ?? 'monthly';
 }
 
-/** True when the change between two profiles switched the plan length. */
-export function planLengthChanged(a: RunnerProfile, b: RunnerProfile) {
-  return planLengthOf(a) !== planLengthOf(b);
+/**
+ * The plan answers in a normalized form (order of days and injuries does
+ * not matter, no injury status without an injury). Stored with a plan to
+ * remember what it was built from.
+ */
+export type PlanAnswersSnapshot = {
+  goal?: GoalId;
+  level?: LevelId;
+  speedWork?: SpeedWorkId;
+  availableDays: DayId[];
+  planLength: PlanLengthId;
+  injuries: InjuryId[];
+  injuryStatus?: InjuryStatusId;
+};
+
+export function planAnswersSnapshot(profile: RunnerProfile): PlanAnswersSnapshot {
+  const injuries = [...(profile.injuries ?? [])].sort();
+  const hasInjury = injuries.some((injury) => injury !== 'none');
+  return {
+    goal: profile.goal,
+    level: profile.level,
+    speedWork: profile.speedWork,
+    availableDays: [...(profile.availableDays ?? [])].sort(),
+    planLength: planLengthOf(profile),
+    injuries,
+    injuryStatus: hasInjury ? profile.injuryStatus : undefined,
+  };
 }
 
-/** True when a change between two profiles makes the saved plan out of date. */
-export function planAnswersChanged(a: RunnerProfile, b: RunnerProfile) {
-  return PLAN_ANSWER_IDS.some(
-    (id) => JSON.stringify(a[id]) !== JSON.stringify(b[id]),
-  );
+export function samePlanAnswers(a: PlanAnswersSnapshot, b: PlanAnswersSnapshot) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** True when the plan length differs between two snapshots. */
+export function planLengthChanged(a: PlanAnswersSnapshot, b: PlanAnswersSnapshot) {
+  return a.planLength !== b.planLength;
 }

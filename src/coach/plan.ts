@@ -7,6 +7,7 @@
  */
 
 import type { ISODate } from '../utils/dates';
+import { samePlanAnswers, type PlanAnswersSnapshot } from './runnerProfile';
 
 // Every field added after version 1 is optional, so old saved plans still
 // load as they are: no migration, same version.
@@ -193,6 +194,16 @@ export type Plan = {
    * 'monthly' (four weeks at once), as every plan was before.
    */
   length?: PlanLength;
+  /**
+   * The plan answers this plan was built from (set when it is created and
+   * when a weekly plan gets a new week). Missing on older plans.
+   */
+  basedOn?: PlanAnswersSnapshot;
+  /**
+   * The answers the user chose "Keep current plan" for: Your profile does
+   * not offer a new plan again for them.
+   */
+  keptAnswers?: PlanAnswersSnapshot;
   /** Sorted by date, at most one per day. */
   workouts: Workout[];
 };
@@ -556,4 +567,31 @@ export function upcomingWorkouts(
       (w) => w.date > after && w.type !== 'rest' && w.status === 'planned',
     )
     .slice(0, count);
+}
+
+/**
+ * The answers a plan is judged against: what it was built from. Plans from
+ * before `basedOn` fall back to `fallback` (the answers when Your profile
+ * opened). Undefined when there is neither.
+ */
+export function planReferenceAnswers(
+  plan: Plan,
+  fallback?: PlanAnswersSnapshot,
+): PlanAnswersSnapshot | undefined {
+  return plan.basedOn ?? fallback;
+}
+
+/**
+ * True when `answers` differ from what the plan was built from and from
+ * the answers the user chose to keep it for.
+ */
+export function planNeedsRebuild(
+  plan: Plan,
+  answers: PlanAnswersSnapshot,
+  fallback?: PlanAnswersSnapshot,
+) {
+  const reference = planReferenceAnswers(plan, fallback);
+  if (!reference) return false;
+  if (samePlanAnswers(reference, answers)) return false;
+  return !(plan.keptAnswers && samePlanAnswers(plan.keptAnswers, answers));
 }

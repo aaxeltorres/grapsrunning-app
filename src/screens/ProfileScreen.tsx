@@ -18,19 +18,21 @@ import {
   profileRows,
   withAnswer,
 } from '../coach/conversation';
+import { createNewPlan } from '../coach/generatePlan';
 import {
-  createNewPlan,
-  generatePlan,
-  regeneratePlan,
-} from '../coach/generatePlan';
+  planNeedsRebuild,
+  planReferenceAnswers,
+  type Plan,
+} from '../coach/plan';
 import {
   planCreatedMessage,
   planOnboardingScript,
   profileScreenMessage,
 } from '../coach/planOnboardingScript';
 import {
-  planAnswersChanged,
+  planAnswersSnapshot,
   planLengthChanged,
+  type PlanAnswersSnapshot,
   type QuestionId,
   type RunnerProfile,
 } from '../coach/runnerProfile';
@@ -71,29 +73,32 @@ planOnboardingScript
 /**
  * "Your profile": every onboarding answer in a list, each one editable
  * through the same answer sheets as Mike's chat. Answers save as soon as
- * a sheet is confirmed. When goal, level, speed work, training days, plan
- * length or injuries changed, leaving the screen offers to update the plan
- * or to create a new one (first, when the plan length changed); a row at
- * the bottom creates a new plan on demand.
+ * a sheet is confirmed. When the plan answers (goal, level, speed work,
+ * training days, plan length, injuries) differ from the ones the saved plan
+ * was built from (`Plan.basedOn`), leaving the screen offers to create a new
+ * plan or keep the current one; a row at the bottom creates a new plan on
+ * demand, through the same `createPlan`.
  */
 export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
 
   const [profile, setProfile] = useState<RunnerProfile | null>(null);
-  // Answers as they were when the screen opened, to tell if the plan
-  // needs an update when leaving.
-  const baselineRef = useRef<RunnerProfile | null>(null);
+  // Plan answers as they were when the screen opened: only the reference
+  // for plans saved before `Plan.basedOn` existed.
+  const openedWithRef = useRef<PlanAnswersSnapshot | null>(null);
+  // The saved plan. This screen is the only writer while it is open.
+  const planRef = useRef<Plan | null>(null);
   // Latest saved profile: runs ahead of `profile` while a sheet closes.
   const savedRef = useRef<RunnerProfile | null>(null);
 
   useEffect(() => {
     let active = true;
-    profileStorage
-      .get()
-      .then((stored) => {
+    Promise.all([profileStorage.get(), planStorage.get().catch(() => null)])
+      .then(([stored, storedPlan]) => {
         if (!active) return;
-        baselineRef.current = stored;
+        openedWithRef.current = planAnswersSnapshot(stored);
+        planRef.current = storedPlan;
         savedRef.current = stored;
         setProfile(stored);
       })
@@ -159,43 +164,54 @@ export default function ProfileScreen({ navigation }: Props) {
     }
   };
 
-  // Leaving: when the answers behind the plan changed, ask about the plan
-  // first. The leave action is held until the user chooses.
+  // Leaving: when the answers differ from the ones the plan was built from,
+  // ask about the plan first. The leave action is held until the user chooses.
   const [syncVisible, setSyncVisible] = useState(false);
-  // The plan length changed: only a new plan really follows it, so the
-  // sheet leads with "Create a new plan".
+  // The plan length changed: the sheet says the new plan follows it.
   const [lengthChanged, setLengthChanged] = useState(false);
-  // Which plan action is running, if any.
-  const [busy, setBusy] = useState<'update' | 'create' | null>(null);
+  const [busy, setBusy] = useState(false);
   const leaveActionRef = useRef<LeaveAction | null>(null);
   const allowLeaveRef = useRef(false);
 
   useEffect(
     () =>
       navigation.addListener('beforeRemove', (event) => {
-        const baseline = baselineRef.current;
+        const plan = planRef.current;
         const current = savedRef.current;
-        if (
-          allowLeaveRef.current ||
-          !baseline ||
-          !current ||
-          !planAnswersChanged(baseline, current)
-        ) {
-          return;
-        }
+        if (allowLeaveRef.current || !plan || !current) return;
+        const answers = planAnswersSnapshot(current);
+        const opened = openedWithRef.current ?? undefined;
+        if (!planNeedsRebuild(plan, answers, opened)) return;
         event.preventDefault();
         leaveActionRef.current = event.data.action;
-        setLengthChanged(planLengthChanged(baseline, current));
+        const reference = planReferenceAnswers(plan, opened);
+        setLengthChanged(
+          reference ? planLengthChanged(reference, answers) : false,
+        );
         setSyncVisible(true);
       }),
     [navigation],
   );
 
+  // Re-arms the leave check if the screen stays mounted after a leave.
+  useEffect(
+    () =>
+      navigation.addListener('focus', () => {
+        allowLeaveRef.current = false;
+      }),
+    [navigation],
+  );
+
   const leave = () => {
-    allowLeaveRef.current = true;
     const action = leaveActionRef.current;
+    leaveActionRef.current = null;
+    allowLeaveRef.current = true;
     if (action) navigation.dispatch(action);
     else navigation.goBack();
+    // If the screen is still mounted afterwards, check again next time.
+    setTimeout(() => {
+      allowLeaveRef.current = false;
+    }, 500);
   };
 
   // Tells the Plan screen (below this one in the stack) that Mike should
@@ -211,60 +227,52 @@ export default function ProfileScreen({ navigation }: Props) {
     });
   };
 
-  // Runs the chosen plan action, saves the result and leaves. A failure is
-  // logged and the user still leaves, with the plan as it was.
-  const syncPlanAndLeave = async (kind: 'update' | 'create') => {
+  // The one way to build a new plan: from the current answers, keeping
+  // finished and skipped workouts. Returns false when it failed.
+  const createPlan = async () => {
     const current = savedRef.current;
-    if (!current || busy) return;
-    setBusy(kind);
+    if (!current) return false;
     try {
-      const plan = await planStorage.get().catch(() => null);
-      const next =
-        kind === 'create'
-          ? await createNewPlan(plan, current)
-          : plan
-            ? await regeneratePlan(plan, current)
-            : await generatePlan(current);
+      const plan = await planStorage.get().catch(() => planRef.current);
+      const next = await createNewPlan(plan, current);
       await planStorage.save(next);
-      if (kind === 'create') announceNewPlan();
+      planRef.current = next;
       successNotification();
+      return true;
     } catch (error) {
-      console.warn(`Failed to ${kind} plan`, error);
+      console.warn('Failed to create plan', error);
+      return false;
     }
-    setBusy(null);
+  };
+
+  // From the leave sheet. A failure is logged and the user still leaves,
+  // with the plan as it was.
+  const handleCreatePlan = async () => {
+    if (busy) return;
+    setBusy(true);
+    if (await createPlan()) announceNewPlan();
+    setBusy(false);
     setSyncVisible(false);
     leave();
   };
 
-  const handleUpdatePlan = () => syncPlanAndLeave('update');
-  const handleCreatePlan = () => syncPlanAndLeave('create');
-
-  type ButtonVariant = React.ComponentProps<typeof Button>['variant'];
-  type ButtonStyle = React.ComponentProps<typeof Button>['style'];
-  const updatePlanButton = (variant: ButtonVariant, style?: ButtonStyle) => (
-    <Button
-      label="Update plan"
-      variant={variant}
-      loading={busy === 'update'}
-      disabled={busy === 'create'}
-      onPress={handleUpdatePlan}
-      style={style}
-    />
-  );
-  const createPlanButton = (variant: ButtonVariant, style?: ButtonStyle) => (
-    <Button
-      label="Create a new plan"
-      variant={variant}
-      loading={busy === 'create'}
-      disabled={busy === 'update'}
-      onPress={handleCreatePlan}
-      style={style}
-    />
-  );
-
-  const handleKeepPlan = () => {
+  // Remembers the answers kept, so the sheet does not come back for them.
+  const handleKeepPlan = async () => {
     if (busy) return;
     lightImpact();
+    const current = savedRef.current;
+    if (current) {
+      const kept = planAnswersSnapshot(current);
+      try {
+        const next = await planStorage.update((plan) => ({
+          ...plan,
+          keptAnswers: kept,
+        }));
+        if (next) planRef.current = next;
+      } catch (error) {
+        console.warn('Failed to save kept answers', error);
+      }
+    }
     setSyncVisible(false);
     leave();
   };
@@ -280,19 +288,9 @@ export default function ProfileScreen({ navigation }: Props) {
   };
 
   const handleCreateNow = async () => {
-    const current = savedRef.current;
-    if (!current || creating) return;
+    if (creating) return;
     setCreating(true);
-    try {
-      const plan = await planStorage.get().catch(() => null);
-      await planStorage.save(await createNewPlan(plan, current));
-      // The plan matches the answers now: leaving needs no plan update.
-      baselineRef.current = current;
-      setMikeLine(planCreatedMessage);
-      successNotification();
-    } catch (error) {
-      console.warn('Failed to create plan', error);
-    }
+    if (await createPlan()) setMikeLine(planCreatedMessage);
     setCreating(false);
     setCreateVisible(false);
   };
@@ -437,28 +435,23 @@ export default function ProfileScreen({ navigation }: Props) {
           </Text>
           <Text style={[typography.subheadline, styles.syncBody]}>
             {lengthChanged
-              ? 'You changed your plan length. Create a new plan starts it fresh this week, one week or four weeks ahead. '
+              ? 'You changed your plan length. A new plan starts fresh this week, one week or four weeks ahead. '
               : ''}
-            Update plan changes only workouts that are still ahead, planned and
-            not edited. Create a new plan rebuilds every planned workout from
-            today on, edited ones included. Finished and skipped workouts stay.
+            Create a new plan rebuilds every planned workout from today on.
+            Workouts you edited will be replaced. Finished and skipped
+            workouts stay.
           </Text>
         </View>
-        {lengthChanged ? (
-          <>
-            {createPlanButton('accent')}
-            {updatePlanButton('secondary', styles.keepButton)}
-          </>
-        ) : (
-          <>
-            {updatePlanButton('accent')}
-            {createPlanButton('secondary', styles.keepButton)}
-          </>
-        )}
+        <Button
+          label="Create a new plan"
+          variant="accent"
+          loading={busy}
+          onPress={handleCreatePlan}
+        />
         <Button
           label="Keep current plan"
           variant="secondary"
-          disabled={busy !== null}
+          disabled={busy}
           onPress={handleKeepPlan}
           style={styles.keepButton}
         />
