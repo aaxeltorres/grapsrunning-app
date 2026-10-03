@@ -702,8 +702,8 @@ type GeneratorContext = {
   startDate: ISODate;
 };
 
-/** One week's workouts (rest days included) and its totals. */
-type BuiltWeek = { workouts: Workout[]; seconds: number; meters: number };
+/** One week's workouts (rest days included), its totals and its load. */
+type BuiltWeek = { workouts: Workout[]; seconds: number; meters: number; s: number };
 
 function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek {
   const { rules, days, startDate } = ctx;
@@ -727,6 +727,7 @@ function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek 
     workouts,
     seconds: workouts.reduce((sum, w) => sum + totalDuration(w), 0),
     meters: workouts.reduce((sum, w) => sum + totalDistance(w), 0),
+    s,
   };
 }
 
@@ -838,17 +839,37 @@ function contextFor(profile: RunnerProfile, startDate: ISODate): GeneratorContex
   return { rules: rulesFor(profile), days: trainingDays(profile), startDate };
 }
 
-/** Workouts of the given weeks (counted from `startDate`), from `from` on. */
+/**
+ * Workouts of the given weeks (counted from `startDate`), from `from` on.
+ * The week pattern makes the day after a demanding one regenerative, also
+ * across weeks (Sunday's long run, then Monday). On the first day kept that
+ * day before is not part of the result: a day before the plan or a past day
+ * left out. When `demandingBefore` says it was not a demanding workout of
+ * the plan, there is nothing to recover from and the day is a plain easy run.
+ */
 function weekWorkouts(
   profile: RunnerProfile,
   startDate: ISODate,
   weeks: number[],
   from: ISODate,
+  demandingBefore: (date: ISODate) => boolean = () => false,
 ): Workout[] {
-  const built = fittedWeeks(contextFor(profile, startDate), weeks);
-  return weeks
-    .flatMap((week) => built.get(week)?.workouts ?? [])
-    .filter((workout) => workout.date >= from);
+  const ctx = contextFor(profile, startDate);
+  const built = fittedWeeks(ctx, weeks);
+  return weeks.flatMap((week) => {
+    const fitted = built.get(week);
+    if (!fitted) return [];
+    return fitted.workouts
+      .filter((workout) => workout.date >= from)
+      .map((workout) => {
+        const before = addDays(workout.date, -1);
+        if (workout.session !== 'regenerative' || before >= from || demandingBefore(before)) {
+          return workout;
+        }
+        const { session: _regenerative, ...rest } = workout;
+        return { ...rest, segments: buildSegments(workout.id, 'easy', ctx.rules, week, fitted.s) };
+      });
+  });
 }
 
 const range = (count: number) => Array.from({ length: count }, (_, i) => i);
@@ -919,8 +940,9 @@ export async function generateWeek(
   startDate: ISODate,
   week: number,
   from: ISODate,
+  demandingBefore?: (date: ISODate) => boolean,
 ): Promise<Workout[]> {
-  return weekWorkouts(profile, startDate, [week], from);
+  return weekWorkouts(profile, startDate, [week], from, demandingBefore);
 }
 
 /** Index of `date`'s week in a plan starting on `startDate` (0 = first). */
@@ -946,7 +968,11 @@ export async function extendPlan(
   if (week < plan.weeks) return plan;
 
   const taken = new Set(plan.workouts.map((w) => w.date));
-  const added = (await generateWeek(profile, plan.startDate, week, today)).filter(
+  // Last week's Sunday long run (if the plan has it) still earns Monday's
+  // regenerative run.
+  const demandingBefore = (date: ISODate) =>
+    plan.workouts.some((w) => w.date === date && isDemandingType(w.type));
+  const added = (await generateWeek(profile, plan.startDate, week, today, demandingBefore)).filter(
     (w) => !taken.has(w.date),
   );
   return {
