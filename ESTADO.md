@@ -2,7 +2,7 @@
 
 ## Versión
 - Actual: 1.15.2
-- Último publicado en Expo: 1.13.0 (las versiones 1.14.x todavía no se publicaron)
+- Último publicado en Expo: 1.15.2 (update afc4305f iOS, f0ed74cc Android)
 
 ## Hecho recientemente
 - Hoja Create a new plan / Keep current plan al salir de Your profile
@@ -23,7 +23,7 @@
 
 ## Pendiente
 - Rediseño de la pantalla de corrida (reloj chico en Regenerative)
-- Publicar el update en Expo y verificarlo en Expo Go
+- Verificar en Expo Go el update 1.15.2
 - Probar una corrida real (haptics, alertas, Reps)
 - Guardar el nombre del usuario para que Mike salude por nombre; totales o filtros en Stats
 - Probar Stats en un build de desarrollo (agregar corridas de ejemplo con pulsación larga en el título)
