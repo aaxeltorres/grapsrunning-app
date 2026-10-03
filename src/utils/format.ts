@@ -60,6 +60,21 @@ export function formatPaceSeconds(paceSeconds: number | null): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+/** A duration said aloud, for screen readers: "28 minutes 20 seconds". */
+export function formatSpokenDuration(totalSeconds: number): string {
+  const total = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds} ${seconds === 1 ? 'second' : 'seconds'}`);
+  }
+  return parts.join(' ');
+}
+
 /** Run clock: `mm:ss`, or `h:mm:ss` from one hour. */
 export function formatClock(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);

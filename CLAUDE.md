@@ -21,8 +21,8 @@ Features today and what is missing: see `docs/features.md`.
 
 ## Project structure (index)
 Detail lives in `docs/`; read the matching file before working on an area.
-- `src/theme`, `src/components`, `src/screens`, `src/navigation`, `src/hooks`, `src/storage` (including the run history), `src/tasks`, `src/utils`: `docs/app.md`
-- `src/coach` (Mike's scripts, runner profile, plan model, plan generator, sessions, zones, workout editor logic): `docs/coach.md`
+- `src/theme`, `src/components`, `src/screens` (including the Stats run history), `src/navigation`, `src/hooks`, `src/storage` (including the run history), `src/tasks`, `src/utils`, `src/dev` (dev-only sample runs): `docs/app.md`
+- `src/coach` (Mike's scripts and his Stats line, runner profile, plan model, plan generator, sessions, zones, workout editor logic): `docs/coach.md`
 - `src/run` (run modes, goals, intervals, workout engine, results logic, run validity and saved runs) and the run-flow components (ActiveRunScreen, run views, setup screens, sheets): `docs/run.md`
 - What is implemented and what is not: `docs/features.md`
 - `dist/` and `.expo/` are generated. Never edit them.

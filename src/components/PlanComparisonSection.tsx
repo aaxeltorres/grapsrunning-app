@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { displayName, type Workout } from '../coach/plan';
-import { plannedVsActual, type ComparisonRow } from '../run/planResult';
+import { compareToPlan, type ComparisonRow } from '../run/planResult';
 import { colors, radius, spacing, typography } from '../theme';
 
 type Props = {
-  workout: Workout;
+  /** The planned session's name, e.g. "Fartlek". */
+  title: string;
+  /** What the plan asked for. */
+  planned: { distanceMeters: number; durationSeconds: number };
   distanceKm: number;
   durationSeconds: number;
   /** The workout was cut short: finished early or with skipped segments. */
@@ -17,12 +19,13 @@ type Props = {
  * per number with the plan, what was run and the difference.
  */
 export default function PlanComparisonSection({
-  workout,
+  title,
+  planned,
   distanceKm,
   durationSeconds,
   partial,
 }: Props) {
-  const rows = plannedVsActual(workout, {
+  const rows = compareToPlan(planned, {
     distanceMeters: distanceKm * 1000,
     durationSeconds,
   });
@@ -33,7 +36,7 @@ export default function PlanComparisonSection({
         <View style={styles.headerText}>
           <Text style={[typography.headline, styles.title]}>Planned vs actual</Text>
           <Text style={[typography.subheadline, styles.label]}>
-            {displayName(workout)}
+            {title}
           </Text>
         </View>
         <View style={[styles.pill, partial ? styles.partialPill : styles.donePill]}>
@@ -43,7 +46,11 @@ export default function PlanComparisonSection({
         </View>
       </View>
 
-      <View style={styles.columns} importantForAccessibility="no-hide-descendants">
+      <View
+        style={styles.columns}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
         <Text style={[typography.caption, styles.columnLabel, styles.rowLabel]} />
         <Text style={[typography.caption, styles.columnLabel, styles.value]}>Planned</Text>
         <Text style={[typography.caption, styles.columnLabel, styles.value]}>Actual</Text>

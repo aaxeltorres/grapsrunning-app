@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 ## Versión
-- Actual: 1.14.10
+- Actual: 1.15.0
 - Último publicado en Expo: 1.13.0 (las versiones 1.14.x todavía no se publicaron)
 
 ## Hecho recientemente
@@ -13,6 +13,7 @@
 - Edad, peso y altura influyen un poco en el plan (progresión y arranque suave)
 - Editor de workouts arreglado
 - Tuerca de Plan a 52 px
+- Stats rediseñada con el historial real: tarjeta de Mike, corridas por mes, hoja de detalle (mapa, métricas, parciales, plan vs real) y borrar con confirmación
 - Historial de corridas: se guarda toda corrida de 500 m y 3 min o más; las más cortas no se guardan y muestran un aviso en los resultados
 - README actualizado y CLAUDE.md dividido en docs/
 - Sin sesión regenerativa al inicio de un plan (1.14.8-1.14.9)
@@ -22,7 +23,8 @@
 - Rediseño de la pantalla de corrida (reloj chico en Regenerative)
 - Publicar el update en Expo y verificarlo en Expo Go
 - Probar una corrida real (haptics, alertas, Reps)
-- Conectar Stats al historial de corridas (hoy usa datos de ejemplo) y poder abrir o borrar corridas
+- Contenido real del mensaje de Mike en Stats (hoy es un saludo de prueba) y totales o filtros en Stats
+- Probar Stats en un build de desarrollo (agregar corridas de ejemplo con pulsación larga en el título)
 - Recuperar una corrida si la app se cierra a mitad (hoy se pierde)
 - Renovar el plan mensual
 - Editar reps, series y zonas en el editor
@@ -32,6 +34,7 @@
 
 ## Decisiones
 - En sesiones Z2 la distancia es el dato principal de la corrida
+- Stats agrupa por mes (con corridas y km del mes); el helper de corridas de ejemplo solo existe con __DEV__
 - Una corrida cuenta (historial y Plan) desde 500 m y 3 min de tiempo en movimiento; las pausas no suman
 - El lag se mide también en el bundle de producción
 

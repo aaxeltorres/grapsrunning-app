@@ -112,8 +112,19 @@ export function plannedVsActual(
   workout: Workout,
   actual: { distanceMeters: number; durationSeconds: number },
 ): ComparisonRow[] {
-  const plannedMeters = totalDistance(workout);
-  const plannedSeconds = totalDuration(workout);
+  return compareToPlan(
+    { distanceMeters: totalDistance(workout), durationSeconds: totalDuration(workout) },
+    actual,
+  );
+}
+
+/** The same rows from the planned numbers alone (a saved run keeps no workout). */
+export function compareToPlan(
+  planned: { distanceMeters: number; durationSeconds: number },
+  actual: { distanceMeters: number; durationSeconds: number },
+): ComparisonRow[] {
+  const plannedMeters = planned.distanceMeters;
+  const plannedSeconds = planned.durationSeconds;
 
   const distanceDiff = actual.distanceMeters - plannedMeters;
   const timeDiff = actual.durationSeconds - plannedSeconds;

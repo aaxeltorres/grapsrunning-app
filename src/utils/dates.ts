@@ -131,16 +131,21 @@ export function formatMonthLabel(iso: ISODate): string {
   return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+/** "7:42 AM", in the device's local time. */
+function formatTime12(date: Date): string {
+  const hours = date.getHours();
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${pad(date.getMinutes())} ${
+    hours < 12 ? 'AM' : 'PM'
+  }`;
+}
+
 /**
  * "Today, 7:42 AM", "Yesterday, 7:42 AM", or "Tue, 29 Sep, 7:42 AM" for a
  * moment in time (ms), in the device's local time.
  */
 export function formatRunDateTime(timestamp: number, now: Date = new Date()): string {
   const date = new Date(timestamp);
-  const hours = date.getHours();
-  const time = `${hours % 12 === 0 ? 12 : hours % 12}:${pad(date.getMinutes())} ${
-    hours < 12 ? 'AM' : 'PM'
-  }`;
+  const time = formatTime12(date);
 
   const iso = toISODate(date);
   const today = toISODate(now);
@@ -148,6 +153,18 @@ export function formatRunDateTime(timestamp: number, now: Date = new Date()): st
   if (iso === addDays(today, -1)) return `Yesterday, ${time}`;
   const month = MONTHS[date.getMonth()].slice(0, 3);
   return `${formatWeekdayShort(iso)}, ${date.getDate()} ${month}, ${time}`;
+}
+
+/** "Sat, Oct 3 · 7:42 AM" for a moment in time (ms), in the device's local time. */
+export function formatRunRowDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${WEEKDAYS[date.getDay()].slice(0, 3)}, ${MONTHS[date.getMonth()].slice(0, 3)} ${date.getDate()} · ${formatTime12(date)}`;
+}
+
+/** "Saturday, October 3 · 7:42 AM" for a moment in time (ms), in the device's local time. */
+export function formatRunSheetDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()} · ${formatTime12(date)}`;
 }
 
 /** "Wednesday, October 30", for screen readers. */

@@ -4,28 +4,6 @@
 
 import Constants from 'expo-constants';
 
-export type DailyStats = {
-  dateLabel: string; // e.g. "Today"
-  fullDateLabel: string; // e.g. "Friday, February 6th"
-  distanceKm: number;
-  distanceGoalKm: number;
-  calories: number;
-  minutes: number;
-  steps: string; // pre-formatted, e.g. "11K"
-  motivationText: string;
-};
-
-export const mockDailyStats: DailyStats = {
-  dateLabel: 'Today',
-  fullDateLabel: 'Friday, February 6th',
-  distanceKm: 8.5,
-  distanceGoalKm: 10,
-  calories: 425,
-  minutes: 52,
-  steps: '11K',
-  motivationText: 'Almost there! 🎉',
-};
-
 export type FeatureCardData = {
   id: string;
   title: string;

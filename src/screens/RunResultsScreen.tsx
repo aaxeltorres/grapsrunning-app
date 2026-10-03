@@ -13,6 +13,7 @@ import RepResultsSection from '../components/RepResultsSection';
 import Button from '../components/Button';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
+import { displayName, totalDistance, totalDuration } from '../coach/plan';
 import { isRunSaveable, MIN_DISTANCE_METERS, MIN_DURATION_SEC } from '../run/runValidity';
 import { formatRunDateTime } from '../utils/dates';
 import { formatClock, formatPace } from '../utils/format';
@@ -108,7 +109,11 @@ export default function RunResultsScreen({ route, navigation }: Props) {
       key: 'planned',
       node: (
         <PlanComparisonSection
-          workout={planned.workout}
+          title={displayName(planned.workout)}
+          planned={{
+            distanceMeters: totalDistance(planned.workout),
+            durationSeconds: totalDuration(planned.workout),
+          }}
           partial={planned.partial}
           distanceKm={distanceKm}
           durationSeconds={durationSeconds}

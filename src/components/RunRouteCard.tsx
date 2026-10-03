@@ -2,10 +2,15 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { RouteCoordinate } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
+import { hasUsableRoute } from '../run/savedRun';
 import RunMap from './RunMap';
 
 type Props = {
   coordinates: RouteCoordinate[];
+  /** Title of the empty state; defaults to "No route recorded". */
+  emptyTitle?: string;
+  /** Line under the empty title. */
+  emptyText?: string;
 };
 
 const MAP_HEIGHT = 320;
@@ -16,8 +21,12 @@ const PIN_SIZE = 36;
  * The route of a finished run: the map in a rounded card, or a calm
  * placeholder when there is no route (one point isn't a route).
  */
-export default function RunRouteCard({ coordinates }: Props) {
-  if (coordinates.length >= 2) {
+export default function RunRouteCard({
+  coordinates,
+  emptyTitle = 'No route recorded',
+  emptyText = "Location wasn't available for this run.",
+}: Props) {
+  if (hasUsableRoute(coordinates)) {
     return <RunMap coordinates={coordinates} height={MAP_HEIGHT} />;
   }
 
@@ -25,15 +34,13 @@ export default function RunRouteCard({ coordinates }: Props) {
     <View
       style={styles.empty}
       accessible
-      accessibilityLabel="No route recorded. Location wasn't available for this run."
+      accessibilityLabel={`${emptyTitle}. ${emptyText}`}
     >
       <View style={styles.pin}>
         <View style={styles.pinDot} />
       </View>
-      <Text style={[typography.headline, styles.emptyTitle]}>No route recorded</Text>
-      <Text style={[typography.subheadline, styles.emptyText]}>
-        Location wasn't available for this run.
-      </Text>
+      <Text style={[typography.headline, styles.emptyTitle]}>{emptyTitle}</Text>
+      <Text style={[typography.subheadline, styles.emptyText]}>{emptyText}</Text>
     </View>
   );
 }

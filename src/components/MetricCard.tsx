@@ -8,6 +8,8 @@ type Props = {
   unit: string;
   accentColor: string;
   backgroundColor: string;
+  /** What a screen reader says for the whole tile (default: the value and the unit). */
+  accessibilityLabel?: string;
 };
 
 /**
@@ -19,15 +21,24 @@ export default function MetricCard({
   unit,
   accentColor,
   backgroundColor,
+  accessibilityLabel,
 }: Props) {
   return (
-    <View style={[styles.card, { backgroundColor }]}>
+    <View
+      style={[styles.card, { backgroundColor }]}
+      accessible
+      accessibilityLabel={accessibilityLabel ?? `${value} ${unit}`}
+    >
       <IconPlaceholder
         size={22}
         backgroundColor={accentColor}
         style={styles.icon}
       />
-      <Text style={[typography.metricSmall, styles.value, { color: accentColor }]}>
+      <Text
+        style={[typography.metricSmall, styles.value, { color: accentColor }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
         {value}
       </Text>
       <Text style={[typography.caption, { color: accentColor }]}>{unit}</Text>
@@ -47,6 +58,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxs,
   },
   value: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    paddingHorizontal: spacing.xs,
     fontVariant: ['tabular-nums'],
   },
 });
