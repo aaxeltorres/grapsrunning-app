@@ -22,7 +22,6 @@ import TopBar from '../components/TopBar';
 import { statsMikeMessage } from '../coach/statsMessage';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
-import { MIN_DISTANCE_METERS, MIN_DURATION_SEC } from '../run/runValidity';
 import { groupRunsByMonth, reuseRuns, type RunMonthSection } from '../run/savedRun';
 import type { SavedRun } from '../run/types';
 import { runHistoryStorage } from '../storage/runHistoryStorage';
@@ -204,31 +203,30 @@ const StatsContent = React.memo(function StatsContent({
 
   if (runs.length === 0) {
     return (
+      // Mike's bubble and the button, centered in the free space; the
+      // screen scrolls if large text makes them taller than it.
       <ScrollView
         style={styles.flex}
         contentContainerStyle={styles.emptyContent}
         showsVerticalScrollIndicator={false}
       >
-        {mikeCard}
-        <Animated.View style={[styles.empty, entrance[1]]}>
-          <Text style={[typography.title2, styles.emptyTitle]}>No runs yet</Text>
-          <Text style={[typography.body, styles.emptyText]}>
-            {`Finish a run of at least ${MIN_DISTANCE_METERS / 1000} km and ${
-              MIN_DURATION_SEC / 60
-            } minutes and it will show up here.`}
-          </Text>
-          <Button label="Start a run" onPress={onStartRun} style={styles.emptyButton} />
-          {__DEV__ && onDevMenu && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dev: sample runs"
-              onPress={onDevMenu}
-              hitSlop={8}
-            >
-              <Text style={[typography.subheadline, styles.dev]}>Dev: sample runs</Text>
-            </Pressable>
-          )}
-        </Animated.View>
+        <View style={styles.emptyCenter}>
+          {mikeCard}
+          <Animated.View style={[styles.emptyAction, entrance[1]]}>
+            <Button label="Start a run" onPress={onStartRun} />
+          </Animated.View>
+        </View>
+        {__DEV__ && onDevMenu && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dev: sample runs"
+            onPress={onDevMenu}
+            hitSlop={8}
+            style={styles.dev}
+          >
+            <Text style={[typography.caption, styles.devText]}>Dev: sample runs</Text>
+          </Pressable>
+        )}
       </ScrollView>
     );
   }
@@ -325,25 +323,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: spacing.xl,
   },
-  empty: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xxl,
+  emptyCenter: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
-  emptyTitle: {
-    color: colors.textPrimary,
-  },
-  emptyText: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  emptyButton: {
-    alignSelf: 'stretch',
-    marginTop: spacing.md,
+  emptyAction: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
   },
   dev: {
+    alignSelf: 'center',
+    paddingVertical: spacing.xs,
+  },
+  devText: {
     color: colors.textMuted,
-    marginTop: spacing.md,
   },
 });

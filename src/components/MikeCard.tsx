@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, spacing, typography } from '../theme';
+import { StyleSheet, View } from 'react-native';
+import { spacing } from '../theme';
 import ChatBubble from './ChatBubble';
 import MikeAvatar from './MikeAvatar';
 
@@ -22,7 +22,6 @@ export default function MikeCard({ message, reduceMotion = false }: Props) {
     <View style={styles.row}>
       <MikeAvatar size={32} style={styles.avatar} />
       <View style={styles.body}>
-        <Text style={[typography.caption, styles.name]}>Mike</Text>
         <ChatBubble
           text={message}
           sender="mike"
@@ -45,10 +44,5 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    gap: spacing.xxs,
-  },
-  name: {
-    color: colors.textSecondary,
-    marginLeft: spacing.md,
   },
 });

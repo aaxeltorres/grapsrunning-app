@@ -8,6 +8,6 @@ import type { SavedRun } from '../run/types';
 
 /** What Mike says, or `undefined` to hide his card. */
 export function statsMikeMessage({ runs }: { runs: SavedRun[] }): string | undefined {
-  if (runs.length === 0) return 'Your runs will show up here. Ready when you are.';
+  if (runs.length === 0) return 'No runs yet. Ready when you are.';
   return 'Here are your runs. Tap one to see the details.';
 }

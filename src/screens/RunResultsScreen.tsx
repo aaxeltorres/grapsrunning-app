@@ -16,7 +16,7 @@ import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { displayName, totalDistance, totalDuration } from '../coach/plan';
 import { isRunSaveable, MIN_DISTANCE_METERS, MIN_DURATION_SEC } from '../run/runValidity';
 import { formatRunDateTime } from '../utils/dates';
-import { formatClock, formatPace } from '../utils/format';
+import { formatClock, formatPace, formatSpokenDuration } from '../utils/format';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RunResults'>;
 
@@ -64,11 +64,7 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     {
       key: 'hero',
       node: tooShort ? (
-        <ShortRun
-          distanceKm={distanceKm}
-          durationSeconds={durationSeconds}
-          onBack={() => navigation.popToTop()}
-        />
+        <ShortRun distanceKm={distanceKm} durationSeconds={durationSeconds} />
       ) : (
         <Hero distanceKm={distanceKm} displayDistance={displayDistance} />
       ),
@@ -136,16 +132,19 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
       <TopBar
         title={tooShort ? 'Run ended' : 'Run complete'}
+        // The too-short view has one exit, the button at the bottom.
         right={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Done"
-            hitSlop={12}
-            onPress={() => navigation.popToTop()}
-            style={({ pressed }) => pressed && styles.pressed}
-          >
-            <Text style={[typography.headline, styles.done]}>Done</Text>
-          </Pressable>
+          tooShort ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+              hitSlop={12}
+              onPress={() => navigation.popToTop()}
+              style={({ pressed }) => pressed && styles.pressed}
+            >
+              <Text style={[typography.headline, styles.done]}>Done</Text>
+            </Pressable>
+          )
         }
       />
       {startedAt !== undefined && (
@@ -164,6 +163,15 @@ export default function RunResultsScreen({ route, navigation }: Props) {
           </Animated.View>
         ))}
       </ScrollView>
+
+      {tooShort && (
+        <View style={styles.footer}>
+          <Button
+            label="Back to Home"
+            onPress={() => navigation.popToTop()}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -236,41 +244,53 @@ function Stats({
   );
 }
 
-/** Shown instead of the whole summary when the run was too short to be saved. */
+/**
+ * Shown instead of the whole summary when the run was too short to be
+ * saved: why, and what the run came to. Its one exit is the footer button.
+ */
 function ShortRun({
   distanceKm,
   durationSeconds,
-  onBack,
 }: {
   distanceKm: number;
   durationSeconds: number;
-  onBack: () => void;
 }) {
-  const details = [
-    Number.isFinite(distanceKm) && distanceKm > 0
-      ? `${Math.round(distanceKm * 1000)} m`
-      : null,
-    Number.isFinite(durationSeconds) && durationSeconds > 0
-      ? formatClock(durationSeconds)
-      : null,
-  ].filter(Boolean);
+  const km = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  const seconds = Number.isFinite(durationSeconds) ? Math.max(0, Math.round(durationSeconds)) : 0;
+  const cells = [
+    {
+      label: 'Distance',
+      value: `${km.toFixed(2)} km`,
+      spoken: `${km.toFixed(2)} kilometers`,
+    },
+    { label: 'Time', value: formatClock(seconds), spoken: formatSpokenDuration(seconds) },
+  ];
+
   return (
     <View style={styles.shortRun}>
-      <Text style={[typography.largeTitle, styles.shortTitle]}>Run too short to be saved</Text>
+      <Text style={[typography.largeTitle, styles.shortTitle]}>Run too short</Text>
       <Text style={[typography.body, styles.shortText]}>
-        Runs need at least {MIN_DISTANCE_METERS / 1000} km and {MIN_DURATION_SEC / 60} minutes of
-        moving time to be saved.
+        {`Runs under ${MIN_DISTANCE_METERS / 1000} km or ${MIN_DURATION_SEC / 60} min aren't saved.`}
       </Text>
-      {details.length > 0 && (
-        <Text style={[typography.subheadline, styles.shortDetails]}>
-          {details.join(' · ')}
-        </Text>
-      )}
-      <Button
-        label="Back to Home"
-        onPress={onBack}
-        style={styles.shortButton}
-      />
+      <View style={styles.shortMetrics}>
+        {cells.map((cell) => (
+          <View
+            key={cell.label}
+            style={styles.shortMetric}
+            accessible
+            accessibilityLabel={`${cell.label}, ${cell.spoken}`}
+          >
+            <Text style={[typography.caption, styles.shortMetricLabel]}>{cell.label}</Text>
+            <Text
+              style={[typography.title2, styles.shortMetricValue]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {cell.value}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -345,11 +365,32 @@ const styles = StyleSheet.create({
   shortText: {
     color: colors.textSecondary,
   },
-  shortButton: {
-    marginTop: spacing.lg,
+  // Two small labeled numbers; they wrap onto two lines at large text sizes.
+  shortMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: spacing.xl,
+    rowGap: spacing.sm,
+    marginTop: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceGray,
+    padding: spacing.md,
   },
-  shortDetails: {
-    color: colors.textMuted,
+  shortMetric: {
+    flexGrow: 1,
+    flexBasis: 120,
+    gap: 2,
+  },
+  shortMetricLabel: {
+    color: colors.textSecondary,
+  },
+  shortMetricValue: {
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
+  },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
 });
