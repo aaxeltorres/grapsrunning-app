@@ -25,6 +25,13 @@ import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { groupRunsByMonth, reuseRuns, type RunMonthSection } from '../run/savedRun';
 import type { SavedRun } from '../run/types';
 import { runHistoryStorage } from '../storage/runHistoryStorage';
+import { planStorage } from '../storage/planStorage';
+import { profileStorage } from '../storage/profileStorage';
+import type { Plan } from '../coach/plan';
+import type { RunnerProfile } from '../coach/runnerProfile';
+
+/** What Mike's line needs besides the runs, read on every focus. */
+type CoachContext = { plan: Plan | null; profile: RunnerProfile | null; now: Date };
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Stats'>;
 
@@ -44,15 +51,27 @@ export default function StatsScreen({ navigation }: Props) {
   const [runs, setRuns] = useState<SavedRun[] | null>(null);
   const [selected, setSelected] = useState<SavedRun | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [coach, setCoach] = useState<CoachContext>(() => ({
+    plan: null,
+    profile: null,
+    now: new Date(),
+  }));
   // Only the latest load may change the list: a slow, older one must not
   // bring back a run that was deleted meanwhile.
   const loadCount = useRef(0);
 
   const reload = useCallback(async () => {
     const id = ++loadCount.current;
-    const loaded = await runHistoryStorage.loadRuns();
+    // Mike's line also reads the plan and profile; either may be missing.
+    const [loaded, plan, profile] = await Promise.all([
+      runHistoryStorage.loadRuns(),
+      planStorage.get().catch(() => null),
+      profileStorage.get().catch(() => null),
+    ]);
+    if (id !== loadCount.current) return;
+    setCoach({ plan, profile, now: new Date() });
     // Runs that didn't change keep their objects, so their rows don't re-render.
-    if (id === loadCount.current) setRuns((current) => reuseRuns(current, loaded));
+    setRuns((current) => reuseRuns(current, loaded));
   }, []);
 
   // Reloads every time the screen is focused, so a run just finished shows up.
@@ -136,6 +155,7 @@ export default function StatsScreen({ navigation }: Props) {
       {runs !== null && (
         <StatsContent
           runs={runs}
+          coach={coach}
           reduceMotion={reduceMotion}
           onOpenRun={handleOpen}
           onStartRun={handleStartRun}
@@ -157,6 +177,7 @@ export default function StatsScreen({ navigation }: Props) {
 
 type ContentProps = {
   runs: SavedRun[];
+  coach: CoachContext;
   reduceMotion: boolean;
   onOpenRun: (run: SavedRun) => void;
   onStartRun: () => void;
@@ -170,13 +191,14 @@ type ContentProps = {
  */
 const StatsContent = React.memo(function StatsContent({
   runs,
+  coach,
   reduceMotion,
   onOpenRun,
   onStartRun,
   onDevMenu,
 }: ContentProps) {
   const entrance = useStaggeredEntrance(2, reduceMotion);
-  const message = statsMikeMessage({ runs });
+  const message = statsMikeMessage({ runs, ...coach });
   const sections = useMemo(() => groupRunsByMonth(runs), [runs]);
 
   // No message, no card (and none of its spacing).
