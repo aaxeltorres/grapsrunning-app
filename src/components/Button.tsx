@@ -177,10 +177,11 @@ const styles = StyleSheet.create({
 });
 
 const variantStyles: Record<Variant, ViewStyle> = {
+  // The one primary action color: the brand blue of the Home "Start run" button.
   primary: {
-    backgroundColor: colors.black,
+    backgroundColor: colors.iosBlue,
   },
-  // Brand action blue, as on the Home "Start run" button.
+  // Older name of the same blue, kept so existing call sites don't change.
   accent: {
     backgroundColor: colors.iosBlue,
   },
