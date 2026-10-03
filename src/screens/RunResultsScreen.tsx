@@ -10,9 +10,10 @@ import RunSplits from '../components/RunSplits';
 import GoalResultsSection from '../components/GoalResultsSection';
 import PlanComparisonSection from '../components/PlanComparisonSection';
 import RepResultsSection from '../components/RepResultsSection';
+import Button from '../components/Button';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
-import { isRunTooShort } from '../run/splits';
+import { isRunSaveable, MIN_DISTANCE_METERS, MIN_DURATION_SEC } from '../run/runValidity';
 import { formatRunDateTime } from '../utils/dates';
 import { formatClock, formatPace } from '../utils/format';
 
@@ -35,7 +36,8 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     reps,
   } = route.params;
   const reduceMotion = useReduceMotion();
-  const tooShort = isRunTooShort(distanceKm, durationSeconds);
+  // A run that is not long enough is not saved: only a notice is shown.
+  const tooShort = !isRunSaveable(distanceKm * 1000, durationSeconds);
 
   // Counts the hero distance up on entry; Reduce Motion shows it at once.
   const [displayDistance, setDisplayDistance] = useState(0);
@@ -61,7 +63,11 @@ export default function RunResultsScreen({ route, navigation }: Props) {
     {
       key: 'hero',
       node: tooShort ? (
-        <ShortRun distanceKm={distanceKm} durationSeconds={durationSeconds} />
+        <ShortRun
+          distanceKm={distanceKm}
+          durationSeconds={durationSeconds}
+          onBack={() => navigation.popToTop()}
+        />
       ) : (
         <Hero distanceKm={distanceKm} displayDistance={displayDistance} />
       ),
@@ -79,10 +85,12 @@ export default function RunResultsScreen({ route, navigation }: Props) {
       ),
     });
   }
-  sections.push({
-    key: 'route',
-    node: <RunRouteCard coordinates={routeCoordinates} />,
-  });
+  if (!tooShort) {
+    sections.push({
+      key: 'route',
+      node: <RunRouteCard coordinates={routeCoordinates} />,
+    });
+  }
   if (goal && !tooShort) {
     sections.push({
       key: 'goals',
@@ -122,7 +130,7 @@ export default function RunResultsScreen({ route, navigation }: Props) {
   return (
     <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
       <TopBar
-        title="Run complete"
+        title={tooShort ? 'Run ended' : 'Run complete'}
         right={
           <Pressable
             accessibilityRole="button"
@@ -223,29 +231,41 @@ function Stats({
   );
 }
 
-/** Shown instead of the hero when the run was too short to summarize. */
+/** Shown instead of the whole summary when the run was too short to be saved. */
 function ShortRun({
   distanceKm,
   durationSeconds,
+  onBack,
 }: {
   distanceKm: number;
   durationSeconds: number;
+  onBack: () => void;
 }) {
   const details = [
-    distanceKm > 0 ? `${Math.round(distanceKm * 1000)} m` : null,
-    durationSeconds > 0 ? formatClock(durationSeconds) : null,
+    Number.isFinite(distanceKm) && distanceKm > 0
+      ? `${Math.round(distanceKm * 1000)} m`
+      : null,
+    Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? formatClock(durationSeconds)
+      : null,
   ].filter(Boolean);
   return (
     <View style={styles.shortRun}>
-      <Text style={[typography.largeTitle, styles.shortTitle]}>That was a short one</Text>
+      <Text style={[typography.largeTitle, styles.shortTitle]}>Run too short to be saved</Text>
       <Text style={[typography.body, styles.shortText]}>
-        Run a little further and your summary will show up here.
+        Runs need at least {MIN_DISTANCE_METERS / 1000} km and {MIN_DURATION_SEC / 60} minutes of
+        moving time to be saved.
       </Text>
       {details.length > 0 && (
         <Text style={[typography.subheadline, styles.shortDetails]}>
           {details.join(' · ')}
         </Text>
       )}
+      <Button
+        label="Back to Home"
+        onPress={onBack}
+        style={styles.shortButton}
+      />
     </View>
   );
 }
@@ -319,6 +339,9 @@ const styles = StyleSheet.create({
   },
   shortText: {
     color: colors.textSecondary,
+  },
+  shortButton: {
+    marginTop: spacing.lg,
   },
   shortDetails: {
     color: colors.textMuted,

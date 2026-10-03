@@ -12,9 +12,12 @@ import { useRunTracking } from '../hooks/useRunTracking';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { DEFAULT_RUN_MODE, RUN_MODES } from '../run/runModes';
 import { buildWorkoutResult, recordWorkoutRun } from '../run/planResult';
-import { computeSplits, isRunTooShort } from '../run/splits';
+import { computeSplits } from '../run/splits';
+import { isRunSaveable } from '../run/runValidity';
+import { buildSavedRun } from '../run/savedRun';
 import { planStorage } from '../storage/planStorage';
-import type { RepResult } from '../coach/plan';
+import { runHistoryStorage } from '../storage/runHistoryStorage';
+import type { RepResult, WorkoutResult } from '../coach/plan';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActiveRun'>;
 
@@ -40,6 +43,8 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
   const [statusBarStyle, setStatusBarStyle] = useState<'dark' | 'light'>('dark');
   const [entered, setEntered] = useState(false);
   const startedAtRef = useRef<number | null>(null);
+  // Set by the first Finish, so a double tap or a re-render can't finish (or save) twice.
+  const finishingRef = useRef(false);
 
   const {
     runState,
@@ -129,57 +134,87 @@ export default function ActiveRunScreen({ navigation, route }: Props) {
   /**
    * A plan run marks its workout completed, or partial when it was cut
    * short or had skipped parts, and saves the actual stats. A run that is
-   * too short to count records nothing, and a workout that was already
+   * too short to be saved records nothing, and a workout that was already
    * done keeps its first result. Never blocks the results: a storage
    * failure only means the Plan isn't updated.
    */
-  const recordPlanRun = async (completedAll: boolean, reps: RepResult[] | undefined) => {
+  const recordPlanRun = async (
+    saveable: boolean,
+    completedAll: boolean,
+    reps: RepResult[] | undefined,
+  ) => {
     if (!planWorkout) return undefined;
     const workout = planWorkout;
-    const counts = !isRunTooShort(distanceKm, durationSeconds);
+    const counts = saveable;
     const partial = !completedAll;
+    let result: WorkoutResult | undefined;
     if (counts && workout.status === 'planned') {
-      const result = buildWorkoutResult({
+      result = buildWorkoutResult({
         distanceKm,
         durationSeconds,
         startedAt: startedAtRef.current ?? undefined,
         reps,
       });
+      const recorded = result;
       try {
         await planStorage.update((plan) =>
-          recordWorkoutRun(plan, workout.id, { result, partial }),
+          recordWorkoutRun(plan, workout.id, { result: recorded, partial }),
         );
       } catch (error) {
         console.warn('Failed to save the workout result', error);
       }
     }
-    return counts ? { workout, partial } : undefined;
+    return counts ? { workout, partial, result } : undefined;
   };
 
   const handleFinish = async (summary?: { completedAll: boolean; reps?: RepResult[] }) => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     await finishRun();
     const reps = summary?.reps;
+    // Only a run long enough is kept: in the history and in the Plan.
+    const saveable = isRunSaveable(distanceKm * 1000, durationSeconds);
     // A free interval run records nothing in the Plan.
-    const planned = await recordPlanRun(summary?.completedAll ?? false, reps);
+    const planned = await recordPlanRun(saveable, summary?.completedAll ?? false, reps);
+    const coordinates = runRoute
+      .filter(location => location.coords.altitude !== -9999)
+      .map(({ coords }) => ({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      }));
+    const splits = computeSplits(runRoute);
+    if (saveable) {
+      // Never blocks the results: a storage failure only means no history entry.
+      try {
+        await runHistoryStorage.saveRun(
+          buildSavedRun({
+            distanceKm,
+            durationSeconds,
+            startedAt: startedAtRef.current ?? Date.now(),
+            calories,
+            route: coordinates,
+            splits,
+            mode,
+            goal,
+            planned,
+            reps,
+          }),
+        );
+      } catch (error) {
+        console.warn('Failed to save the run', error);
+      }
+    }
     navigation.replace('RunResults', {
       distanceKm,
       durationSeconds,
-      route: runRoute
-        .filter(location => location.coords.altitude !== -9999)
-        .map(({ coords }) => ({
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-        })),
+      route: coordinates,
       goal,
       startedAt: startedAtRef.current ?? undefined,
       calories,
-      splits: computeSplits(runRoute),
-      planned,
-      // A run too short to count shows none.
-      reps:
-        reps && reps.length > 0 && !isRunTooShort(distanceKm, durationSeconds)
-          ? reps
-          : undefined,
+      splits,
+      planned: planned && { workout: planned.workout, partial: planned.partial },
+      // A run too short to be saved shows none.
+      reps: reps && reps.length > 0 && saveable ? reps : undefined,
     });
   };
 

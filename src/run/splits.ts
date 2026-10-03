@@ -29,14 +29,6 @@ const MIN_PARTIAL_KM = 0.1;
 /** The slowest bar never gets shorter than this share of the fastest. */
 const MIN_BAR_FRACTION = 0.2;
 
-/** Below this a run has no summary worth showing (same limits as pace). */
-const TOO_SHORT_KM = 0.05;
-const TOO_SHORT_SECONDS = 10;
-
-export function isRunTooShort(distanceKm: number, durationSeconds: number) {
-  return distanceKm < TOO_SHORT_KM || durationSeconds < TOO_SHORT_SECONDS;
-}
-
 export function splitPace(split: Split): number {
   return split.seconds / split.distanceKm;
 }
