@@ -2,7 +2,7 @@
   "expo": {
     "name": "Graps Running",
     "slug": "grapsrunning-app",
-    "version": "1.14.8",
+    "version": "1.14.9",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
