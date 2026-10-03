@@ -138,9 +138,63 @@ export function planLengthOf(profile: RunnerProfile): PlanLengthId {
 }
 
 /**
+ * How fast the weeks build: `steady` (age 14-17 and 40-54) and `gentle`
+ * (55 and up, which also keeps more easy days). Missing means standard.
+ */
+export type ProgressionId = 'steady' | 'gentle';
+
+/**
+ * What age, height and weight change in the plan, in a few bands, so a
+ * small change inside a band (25 to 26) changes nothing. Never shown: it
+ * only feeds the generator and the plan-answers snapshot.
+ * - `progression`: see `ProgressionId`.
+ * - `softStart`: a run/walk beginner with a higher load per kilo of height
+ *   (weight / height² of 30 or more) starts a little softer.
+ * Neutral values are left out, so most runners get `{}`.
+ */
+export type PlanModifiers = { progression?: ProgressionId; softStart?: true };
+
+// Same ranges as the onboarding questions: anything outside counts as missing.
+const AGE_RANGE = { min: 14, max: 90 };
+const HEIGHT_RANGE_CM = { min: 120, max: 230 };
+const WEIGHT_RANGE_KG = { min: 30, max: 250 };
+/** Under this age the weeks build steadily (still growing). */
+const ADULT_AGE = 18;
+const STEADY_FROM_AGE = 40;
+const GENTLE_FROM_AGE = 55;
+/** Weight / height² from which a run/walk beginner starts softer. */
+const SOFT_START_FROM = 30;
+
+const inRange = (value: number | undefined, range: { min: number; max: number }) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= range.min && value <= range.max;
+
+export function planModifiers(profile: RunnerProfile): PlanModifiers {
+  const modifiers: PlanModifiers = {};
+  const { age, heightCm, weightKg } = profile;
+  if (inRange(age, AGE_RANGE)) {
+    const years = age as number;
+    if (years >= GENTLE_FROM_AGE) modifiers.progression = 'gentle';
+    else if (years >= STEADY_FROM_AGE || years < ADULT_AGE) modifiers.progression = 'steady';
+  }
+  const level = knownLevel(profile.level);
+  if (
+    level !== undefined &&
+    isBeginnerLevel(level) &&
+    inRange(heightCm, HEIGHT_RANGE_CM) &&
+    inRange(weightKg, WEIGHT_RANGE_KG)
+  ) {
+    const meters = (heightCm as number) / 100;
+    if ((weightKg as number) / (meters * meters) >= SOFT_START_FROM) modifiers.softStart = true;
+  }
+  return modifiers;
+}
+
+/**
  * The plan answers in a normalized form (order of days and injuries does
  * not matter, no injury status without an injury). Stored with a plan to
- * remember what it was built from.
+ * remember what it was built from. Age, height and weight enter only
+ * through their effect (`modifiers`, left out when neutral), so plans
+ * stored before it compare equal for runners they don't affect.
  */
 export type PlanAnswersSnapshot = {
   goal?: GoalId;
@@ -150,11 +204,13 @@ export type PlanAnswersSnapshot = {
   planLength: PlanLengthId;
   injuries: InjuryId[];
   injuryStatus?: InjuryStatusId;
+  modifiers?: PlanModifiers;
 };
 
 export function planAnswersSnapshot(profile: RunnerProfile): PlanAnswersSnapshot {
   const injuries = [...(profile.injuries ?? [])].sort();
   const hasInjury = injuries.some((injury) => injury !== 'none');
+  const modifiers = planModifiers(profile);
   return {
     goal: profile.goal,
     level: knownLevel(profile.level),
@@ -163,6 +219,7 @@ export function planAnswersSnapshot(profile: RunnerProfile): PlanAnswersSnapshot
     planLength: planLengthOf(profile),
     injuries,
     injuryStatus: hasInjury ? profile.injuryStatus : undefined,
+    ...(Object.keys(modifiers).length > 0 ? { modifiers } : {}),
   };
 }
 

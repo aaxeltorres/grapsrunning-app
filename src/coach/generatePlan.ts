@@ -21,7 +21,9 @@ import {
   knownLevel,
   planAnswersSnapshot,
   planLengthOf,
+  planModifiers,
   type DayId,
+  type ProgressionId,
   type GoalId,
   type LevelId,
   type RunnerProfile,
@@ -56,6 +58,18 @@ const MAX_GROWTH_BLOCKS = 4;
 const MAX_WEEK_GROWTH = 1.1;
 /** The lighter week, relative to the third one. */
 const DELOAD_RANGE = { min: 0.75, max: 0.85 };
+/**
+ * Share of the build-up kept by age band (`planModifiers`): the growth of
+ * the build weeks, their weekly cap and the block growth scale by it. Week 1
+ * and the lighter week's 15-25% drop stay the same for everyone.
+ */
+const PROGRESSION_GROWTH: Record<ProgressionId | 'standard', number> = {
+  standard: 1,
+  steady: 0.75,
+  gentle: 0.5,
+};
+/** Week-1 load of a run/walk beginner with a soft start. */
+const SOFT_START_LOAD = 0.9;
 /** The load a week can be built at, searched in fixed steps. */
 const FIT_MIN = 0.6;
 const FIT_MAX = 1.6;
@@ -253,6 +267,12 @@ export type Rules = {
   easyPace: number;
   /** The level's volume (10K and up, no pain); otherwise the original path. */
   volume?: LevelVolume;
+  /** Share of the build-up kept (1 = standard; by age band). */
+  growth: number;
+  /** Age 55+: no second aerobic session, so the week keeps more easy days. */
+  moreRecovery: boolean;
+  /** A run/walk beginner's softer first week (`SOFT_START_LOAD`). */
+  softStart: boolean;
 };
 
 export function rulesFor(profile: RunnerProfile): Rules {
@@ -262,7 +282,11 @@ export function rulesFor(profile: RunnerProfile): Rules {
   // A goal id this version doesn't know counts as no goal.
   const goal = profile.goal !== undefined && profile.goal in GOAL_FOCUS ? profile.goal : 'not_sure';
   const volume = beginner || gentle ? undefined : LEVEL_VOLUME[level];
+  const modifiers = planModifiers(profile);
   return {
+    growth: PROGRESSION_GROWTH[modifiers.progression ?? 'standard'],
+    moreRecovery: modifiers.progression === 'gentle',
+    softStart: modifiers.softStart === true,
     level,
     goal,
     focus: GOAL_FOCUS[goal],
@@ -284,15 +308,29 @@ export function sessionExtraReps(rules: Rules) {
 /** Week of its block (0-3); week 3 is the lighter one. */
 const cycleWeek = (week: number) => week % CYCLE_WEEKS;
 const blockOf = (week: number) => Math.floor(week / CYCLE_WEEKS);
-const blockGrowth = (week: number) =>
-  1 + BLOCK_GROWTH * Math.min(blockOf(week), MAX_GROWTH_BLOCKS);
+const blockGrowth = (week: number, growth = 1) =>
+  1 + BLOCK_GROWTH * growth * Math.min(blockOf(week), MAX_GROWTH_BLOCKS);
+
+/**
+ * A curve's value in a week of the block with only `growth` of its
+ * build-up: the build weeks keep that share of their growth, and the
+ * lighter week stays the same share below the third one.
+ */
+function curveAt(curve: number[], week: number, growth: number) {
+  const cycle = cycleWeek(week);
+  const built = (c: number) => 1 + (curve[c] - 1) * growth;
+  return cycle === DELOAD_WEEK
+    ? built(DELOAD_WEEK - 1) * (curve[DELOAD_WEEK] / curve[DELOAD_WEEK - 1])
+    : built(cycle);
+}
 
 /**
  * A week's target volume relative to the plan's first week. Also the
  * nominal load the workout editor builds a session of that week at.
+ * `growth` is the runner's share of the build-up (`Rules.growth`).
  */
-export function weekLoad(week: number) {
-  return WEEK_CURVE[cycleWeek(week)] * blockGrowth(week);
+export function weekLoad(week: number, growth = 1) {
+  return curveAt(WEEK_CURVE, week, growth) * blockGrowth(week, growth);
 }
 
 function trainingDays(profile: RunnerProfile): DayId[] {
@@ -382,7 +420,11 @@ const NON_ADVANCED: Partial<Record<SessionId, SessionId>> = {
 /** Aerobic sessions alternate week by week. */
 const AEROBIC_ROTATION: SessionId[] = ['extensiveAerobic', 'progressive'];
 
-type Assignment = { type: WorkoutType; session?: SessionId };
+/**
+ * `easyFor`: an easy run that takes the place of this session (age 55+,
+ * `Rules.moreRecovery`), as long as the session would be.
+ */
+type Assignment = { type: WorkoutType; session?: SessionId; easyFor?: SessionId };
 
 function qualitySession(rules: Rules, week: number): Assignment {
   let pick = QUALITY_ROTATION[rules.focus][cycleWeek(week)];
@@ -453,11 +495,15 @@ function weekTypes(
     const extra = days.find(
       (day) => isEasy(day) && !demanding(previousDay(day)) && !demanding(nextDay(day)),
     );
-    if (extra) types.set(extra, aerobicSession(week + 1));
+    const aerobic = aerobicSession(week + 1);
+    if (extra) {
+      // Age 55+: the same time on feet, as an easy run.
+      types.set(extra, rules.moreRecovery ? { type: 'easy', easyFor: aerobic.session } : aerobic);
+    }
   }
 
   for (const day of days) {
-    if (isEasy(day) && demanding(previousDay(day))) {
+    if (isEasy(day) && types.get(day)?.easyFor === undefined && demanding(previousDay(day))) {
       types.set(day, { type: 'easy', session: 'regenerative' });
     }
   }
@@ -501,7 +547,7 @@ export function sessionSegments(
   session: SessionId,
   rules: Rules,
   week: number,
-  s: number = weekLoad(week),
+  s: number = weekLoad(week, rules.growth),
 ): WorkoutSegment[] {
   if (session === 'regenerative') {
     const easy = totalDuration({ segments: buildSegments(workoutId, 'easy', rules, week, s) });
@@ -619,7 +665,7 @@ export function buildSegments(
   type: WorkoutType,
   rules: Rules,
   week: number,
-  s: number = weekLoad(week),
+  s: number = weekLoad(week, rules.growth),
 ): WorkoutSegment[] {
   const { step, repeat } = stepFactory(workoutId);
   const easy = paceRange(rules.easyPace, 10, 20);
@@ -671,7 +717,7 @@ export function buildSegments(
   }
 
   if (type === 'long') {
-    const longLoad = LONG_CURVE[cycleWeek(week)] * blockGrowth(week);
+    const longLoad = curveAt(LONG_CURVE, week, rules.growth) * blockGrowth(week, rules.growth);
     const longPace = paceRange(rules.easyPace, 0, 30);
     if (!rules.volume) {
       const km = roundHalfKm(EASY_KM[rules.level] * LONG_RUN_FACTOR[rules.focus] * longLoad);
@@ -695,6 +741,16 @@ export function buildSegments(
   return [step('steady', distance(km), easy)];
 }
 
+/** An easy run as long as `session` would be in that week (at least the regular easy run). */
+function easyRunFor(id: string, session: SessionId, rules: Rules, week: number, s: number) {
+  const seconds = totalDuration({ segments: sessionSegments(id, session, rules, week, s) });
+  const regular = buildSegments(id, 'easy', rules, week, s);
+  const [first] = regular;
+  if (!first || !('kind' in first) || first.target.type !== 'distance') return regular;
+  const km = Math.max(first.target.meters / 1000, Math.round((seconds / rules.easyPace) * 2) / 2);
+  return [{ ...first, target: distance(km) }];
+}
+
 type GeneratorContext = {
   rules: Rules;
   days: DayId[];
@@ -710,7 +766,7 @@ function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek 
   const types = weekTypes(days, rules, week);
   const workouts = DAY_ORDER.map((day, dayIndex): Workout => {
     const date = addDays(startDate, week * 7 + dayIndex);
-    const { type, session }: Assignment = types.get(day) ?? { type: 'rest' };
+    const { type, session, easyFor }: Assignment = types.get(day) ?? { type: 'rest' };
     const id = `w-${date}`;
     return {
       id,
@@ -720,7 +776,9 @@ function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek 
       status: 'planned',
       segments: session
         ? sessionSegments(id, session, rules, week, s)
-        : buildSegments(id, type, rules, week, s),
+        : easyFor
+          ? easyRunFor(id, easyFor, rules, week, s)
+          : buildSegments(id, type, rules, week, s),
     };
   });
   return {
@@ -732,16 +790,21 @@ function buildWeekAt(ctx: GeneratorContext, week: number, s: number): BuiltWeek 
 }
 
 /** Allowed totals relative to the week before, by week of the block. */
-function weekBounds(week: number) {
+function weekBounds(week: number, growth: number) {
   const cycle = cycleWeek(week);
   if (cycle === 0) return null;
   if (cycle === DELOAD_WEEK) return DELOAD_RANGE;
-  return { min: 1, max: MAX_WEEK_GROWTH };
+  return { min: 1, max: 1 + (MAX_WEEK_GROWTH - 1) * growth };
 }
 
 /** How far a week falls outside its bounds, on time and distance (0 = inside). */
-function boundsMiss(built: BuiltWeek, previous: BuiltWeek | undefined, week: number) {
-  const bounds = weekBounds(week);
+function boundsMiss(
+  built: BuiltWeek,
+  previous: BuiltWeek | undefined,
+  week: number,
+  growth: number,
+) {
+  const bounds = weekBounds(week, growth);
   if (!bounds || !previous) return 0;
   let miss = 0;
   for (const [value, before] of [
@@ -767,13 +830,13 @@ function fitWeek(
   first: BuiltWeek,
   previous: BuiltWeek | undefined,
 ): BuiltWeek {
-  const target = first.seconds * weekLoad(week);
+  const target = first.seconds * weekLoad(week, ctx.rules.growth);
   let best: BuiltWeek | undefined;
   let bestScore = Infinity;
   for (const s of fitLoads(ctx.rules)) {
     const built = buildWeekAt(ctx, week, s);
     const score =
-      boundsMiss(built, previous, week) * 1e9 +
+      boundsMiss(built, previous, week, ctx.rules.growth) * 1e9 +
       Math.abs(built.seconds - target) +
       Math.abs(s - 1) * 1e-3;
     if (score < bestScore) {
@@ -790,6 +853,13 @@ function fitWeek(
  * factor. Same grid and tie rule as `fitWeek`.
  */
 function fitFirstWeek(ctx: GeneratorContext, volume: LevelVolume): BuiltWeek {
+  if (ctx.rules.moreRecovery) {
+    // Same load as without the extra recovery: the sessions keep their
+    // length and the aerobic day becomes an easy run, so the week is lighter
+    // instead of making the other sessions longer to fill it.
+    const standard = fitFirstWeek({ ...ctx, rules: { ...ctx.rules, moreRecovery: false } }, volume);
+    return buildWeekAt(ctx, 0, standard.s);
+  }
   const wanted =
     minutes(volume.minutesPerDay) * ctx.days.length * GOAL_VOLUME[ctx.rules.goal].week;
   // Sessions stop at their editor limits, so a week can only hold so much:
@@ -797,7 +867,7 @@ function fitFirstWeek(ctx: GeneratorContext, volume: LevelVolume): BuiltWeek {
   const loads = fitLoads(ctx.rules);
   const top = loads[loads.length - 1];
   const room = Math.min(
-    ...[1, 2].map((week) => (buildWeekAt(ctx, week, top).seconds * BUILD_ROOM) / WEEK_CURVE[week]),
+    ...[1, 2].map((week) => (buildWeekAt(ctx, week, top).seconds * BUILD_ROOM) / weekLoad(week, ctx.rules.growth)),
   );
   const target = Math.min(wanted, room);
   let best: BuiltWeek | undefined;
@@ -821,8 +891,11 @@ function fitFirstWeek(ctx: GeneratorContext, volume: LevelVolume): BuiltWeek {
  */
 function fittedWeeks(ctx: GeneratorContext, weeks: number[]): Map<number, BuiltWeek> {
   // The plan's first week sets the volume: the level's own volume when it
-  // has one, otherwise the week at its natural load.
-  const first = ctx.rules.volume ? fitFirstWeek(ctx, ctx.rules.volume) : buildWeekAt(ctx, 0, 1);
+  // has one, otherwise the week at its natural load (a little lower for a
+  // soft start).
+  const first = ctx.rules.volume
+    ? fitFirstWeek(ctx, ctx.rules.volume)
+    : buildWeekAt(ctx, 0, ctx.rules.softStart ? SOFT_START_LOAD : 1);
   const cache = new Map<number, BuiltWeek>();
   const fitted = (week: number): BuiltWeek => {
     const cached = cache.get(week);
